@@ -64,10 +64,10 @@ python3 amyg.py \
   --threads 25 \
   -o /absolute/path/to/test_docker \
   --use_docker
+  --force
 ```
-- ```--threads 25``` sets NCPUs in GAWN.
+- ```--threads 25``` sets number of cpus (NCPUs) for BLAST-based GAWN annotation.
 - The output is placed in ```/absolute/path/to/test_docker/```.
-- **Ctrl+C** kills all running Docker containers, ensuring no stuck processes.
 
 ### 2) Conda Mode
 ```
@@ -80,12 +80,15 @@ python3 amyg.py \
   --use_conda \
   --force
 ```
+
+#### Notes:
+
+- **Ctrl+C** kills all running Docker containers, ensuring no stuck processes.
 - ```--force``` overwrites existing database/ and gawn_config.sh if they are in the output folder. We reccomend to run the pipeline fresh using this flag. 
-- The pipeline runs entirely within your local annotate_env conda environment.
 
 ---
 
-### Detailed Steps
+## Detailed Steps
 
 **1. Download SwissProt**  
 The script downloads `swissprot.tar.gz` from the NCBI BLAST ftp server, unpacks it into `database/`.
@@ -107,7 +110,7 @@ Downloads `annotate_gtf.py` and merges final hits into `final_annotated.gtf`.
 
 ---
 
-### Requirements
+## Requirements
 
 - **Python 3.7+**  
 - **Miniconda** or **Docker** installed on your system  
@@ -128,6 +131,3 @@ Make sure you have write access to your output directory and local Docker permis
 ### License
 
 This project is licensed under the MIT License.
-
-
-
