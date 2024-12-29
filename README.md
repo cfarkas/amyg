@@ -50,15 +50,17 @@ python3 amyg.py --install docker
 python3 amyg.py --purge_all_envs
 ```
 
+---
+
 ## Run
 Currently there are two ways to run the pipeline:
 
-1) Docker Mode
+### 1) Docker Mode
 ```
 mkdir test_docker
 python3 amyg.py \
-  -a /path/to/all_transcripts_braker.unique_gene_id.gtf \
-  -g /path/to/ragtag.HiFi.polished.simplified.fasta \
+  -a /path/to/genes.gtf \
+  -g /path/to/genome.fasta \
   --threads 25 \
   -o /absolute/path/to/test_docker \
   --use_docker
@@ -67,12 +69,12 @@ python3 amyg.py \
 The output is placed in /absolute/path/to/test_docker.
 - **Ctrl+C** kills all running Docker containers, ensuring no stuck processes.
 
-2) Conda Mode
+### 2) Conda Mode
 ```
 mkdir test_conda
 python3 amyg.py \
-  -a /path/to/all_transcripts_braker.unique_gene_id.gtf \
-  -g /path/to/ragtag.HiFi.polished.simplified.fasta \
+  -a gtf.unique_gene_id.gtf \
+  -g genome.fasta \
   --threads 25 \
   -o ./test_conda \
   --use_conda \
@@ -81,6 +83,7 @@ python3 amyg.py \
 --force overwrites existing database/ and gawn_config.sh if they are in the output folder.
 The pipeline runs entirely within your local annotate_env conda environment.
 
+---
 
 ### Detailed Steps
 
