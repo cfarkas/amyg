@@ -65,8 +65,8 @@ python3 amyg.py \
   -o /absolute/path/to/test_docker \
   --use_docker
 ```
---threads 25 sets NCPUs in GAWN.
-The output is placed in /absolute/path/to/test_docker.
+- ```--threads 25``` sets NCPUs in GAWN.
+- The output is placed in /absolute/path/to/test_docker.
 - **Ctrl+C** kills all running Docker containers, ensuring no stuck processes.
 
 ### 2) Conda Mode
@@ -80,8 +80,8 @@ python3 amyg.py \
   --use_conda \
   --force
 ```
---force overwrites existing database/ and gawn_config.sh if they are in the output folder.
-The pipeline runs entirely within your local annotate_env conda environment.
+- ```--force``` overwrites existing database/ and gawn_config.sh if they are in the output folder.
+- The pipeline runs entirely within your local annotate_env conda environment.
 
 ---
 
