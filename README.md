@@ -1,13 +1,12 @@
 # **amyg**: A Pipeline for De Novo Genomic Annotation of Non-Model Organisms
 
-**amyg.py** is a Python-based annotation pipeline that aims to annotate a de novo sequenced genomes (draft or complete) using RNA-seq evidence. **amyg.py**:
+**amyg.py** is a Python-based annotation pipeline that aims to annotate a de novo sequenced genomes (draft or complete) using RNA-seq evidence. Currently the pipeline:
 - Performs GTF processing from StringTie outputs  
 - Generates gene annotation using [GAWN](https://github.com/enormandeau/gawn) with SwissProt/BLAST integration  
 - Resolve transcriptome coding potential with **TransDecoder**, producing **longest ORFs**, **CDS**, and **peptide** sequences for each transcript.     
 
-Currently, it supports two main environments:
-
-1. **Conda**  
+Currently, the pipeline can run through:
+1. **Conda**  (an environment called `annotate_env` will be created in your system)
 2. **Docker** (with an auto-built image `myorg/annotate_env:latest`)
 
 ## Synopsis
