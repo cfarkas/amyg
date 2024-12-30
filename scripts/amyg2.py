@@ -94,8 +94,8 @@ def run_pipeline_command(cmd, use_conda, use_docker, output_dir):
     """
     Run a pipeline command either in conda or docker environment:
       - If docker, mount output_dir as /data and run in container.
-      - If conda, run 'conda run -n annotate_env bash -c "cd {output_dir} && ..."'.
-      - Otherwise, run on the host.
+      - If conda, run 'conda run -n annotate_env bash -c "cd {output_dir} && ..."' on host.
+      - Otherwise, run on the host directly.
     """
     if use_docker:
         if not os.path.isabs(output_dir):
@@ -170,7 +170,7 @@ def environment_yml_content(use_docker=False):
     Return the environment.yml content.
 
     If not use_docker => everything installed via conda (including numpy/pandas/etc).
-    If use_docker => minimal environment via conda, the last 6 libs installed via pip in Dockerfile.
+    If use_docker => minimal environment via conda, then pip for those libs in Dockerfile.
     """
     if not use_docker:
         # Full environment with everything in conda
@@ -203,7 +203,7 @@ dependencies:
   - intervaltree
 """
     else:
-        # Minimal environment => pip install the last 6 libs in Dockerfile
+        # Minimal environment => conda + pip for final libs
         return """\
 name: annotate_env
 channels:
@@ -233,10 +233,10 @@ def dockerfile_content(use_docker=False):
     Return Dockerfile content:
 
     If not use_docker => conda environment contains everything.
-    If use_docker => do minimal conda, then pip install the last 6 python libs.
+    If use_docker => partial conda + pip step, plus compilers.
     """
     if not use_docker:
-        # Dockerfile that conda-installs everything
+        # Dockerfile: everything installed via conda
         return """\
 FROM continuumio/miniconda3:4.8.2
 WORKDIR /opt
@@ -248,7 +248,7 @@ ENV PATH /opt/conda/envs/annotate_env/bin:$PATH
 WORKDIR /data
 """
     else:
-        # Dockerfile => partial conda + pip for last 6 libs, plus compilers
+        # Dockerfile => partial conda => pip for final libs => compilers
         return """\
 FROM continuumio/miniconda3:4.8.2
 WORKDIR /opt
@@ -258,7 +258,7 @@ COPY environment.yml /tmp/environment.yml
 # 1) Create the conda environment
 RUN conda env create -f /tmp/environment.yml && conda clean -afy
 
-# 2) Install compilers in the environment so that pip can build any C/C++ extensions
+# 2) Install compilers in the environment so pip can build C/C++ packages
 RUN conda run -n annotate_env conda install -c conda-forge -c bioconda -y compilers
 
 # 3) Pip install the Python data libraries
@@ -282,9 +282,8 @@ def write_environment_yml(use_docker):
 def write_dockerfile(use_docker, extra_files=None):
     df_content = dockerfile_content(use_docker=use_docker).splitlines()
 
-    # Optionally add lines to COPY extra_files if needed
     if extra_files:
-        pass
+        pass  # If needed, we could insert COPY lines for extra_files
 
     with open("Dockerfile", "w") as f:
         f.write("\n".join(df_content) + "\n")
@@ -380,7 +379,7 @@ def verify_tools_docker():
 def install_conda_env():
     """Create the conda environment and verify required tools."""
     log_green_info("Installing conda environment...")
-    write_environment_yml(use_docker=False)  # All libs via conda
+    write_environment_yml(use_docker=False)
     run_cmd("conda env create -f environment.yml")
     log_green_info("Conda environment 'annotate_env' created successfully.")
     verify_tools_conda()
@@ -391,7 +390,7 @@ def install_conda_env():
 def install_docker_image():
     """Build the Docker image and verify required tools."""
     log_green_info("Installing docker image...")
-    write_environment_yml(use_docker=True)   # Minimal conda => pip step in Docker
+    write_environment_yml(use_docker=True)
     write_dockerfile(use_docker=True)
     run_cmd("docker build . -t myorg/annotate_env:latest")
     log_green_info("Docker image 'myorg/annotate_env:latest' built successfully.")
@@ -711,12 +710,12 @@ def main():
         else:
             logger.warning("No final_annotated.gtf found. Check if annotate_gtf.py ran correctly.")
 
-        # (Optional) copy transcriptome_annotation_table.tsv if desired
+        # Step 9: (Optional) Copy transcriptome_annotation_table.tsv if desired
         # table_src = os.path.join(output_dir, "gawn", "05_results", "transcriptome_annotation_table.tsv")
         # if os.path.isfile(table_src):
         #     shutil.copy(table_src, FINAL_RESULTS_DIR)
 
-        # Check leftover
+        # Step 9A: Organize leftover output
         contents = os.listdir(output_dir)
         exclude = {
             "final_results",
@@ -784,6 +783,34 @@ def main():
             )
             run_pipeline_command(cmd_synteny, use_conda, use_docker, output_dir)
             logger.info("::: Synteny-based duplication analysis completed. :::")
+
+            # Step 9C: Download & run amyg_annotatedups.py (merging synteny_blocks + final_annotated.gtf)
+            logger.info("::: Step 9C: Downloading & running amyg_annotatedups.py for GTF duplication annotation :::")
+            run_pipeline_command(
+                "curl -O https://raw.githubusercontent.com/cfarkas/amyg/refs/heads/main/scripts/amyg_annotatedups.py",
+                use_conda, use_docker, output_dir
+            )
+            run_pipeline_command("chmod +x amyg_annotatedups.py", use_conda, use_docker, output_dir)
+
+            # We'll assume that amyg_syntenyblast.py outputs "synteny_blocks.csv" in output_dir
+            # We'll assume final_annotated.gtf is in FINAL_RESULTS_DIR => "final_annotated.gtf"
+            # We'll produce "final_annotated_dups.gtf" there too
+            final_annotated_gtf_path = os.path.join(FINAL_DIR, "final_annotated.gtf")
+            synteny_csv_path = os.path.join(output_dir, "synteny_blocks.csv")  # from amyg_syntenyblast
+            dup_annot_log = os.path.join(output_dir, "dup_annot.log")
+            final_annot_dups_path = os.path.join(FINAL_DIR, "final_annotated_dups.gtf")
+
+            # Command:
+            # python amyg_annotatedups.py final_annotated.gtf synteny_blocks.csv final_annotated_dups.gtf dup_annot.log
+            annotate_dups_cmd = (
+                f"python amyg_annotatedups.py "
+                f"{final_annotated_gtf_path} "
+                f"{synteny_csv_path} "
+                f"{final_annot_dups_path} "
+                f"{dup_annot_log}"
+            )
+            run_pipeline_command(annotate_dups_cmd, use_conda, use_docker, output_dir)
+            logger.info("::: GTF duplication annotation completed. :::")
 
         logger.info("::: Pipeline completed :::")
 
