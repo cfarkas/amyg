@@ -48,7 +48,7 @@ python3 amyg.py --install docker
 # 3) Uninstall and purge old envs (optional):
 python3 amyg.py --purge_all_envs
 ```
-- Docker image takes ~17.5 min to build in Ubuntu 22.04.4 LTS. We reccomend this option. 
+- Docker image takes ~17.5 min to build in Ubuntu 22.04.4 LTS.
 
 ---
 
