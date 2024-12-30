@@ -52,7 +52,7 @@ python3 amyg.py --install docker
 # 3) Uninstall and purge old envs (optional):
 python3 amyg.py --purge_all_envs
 ```
-- Docker image takes ~47.8 min to build in Ubuntu 24.04.1 LTS. We aimed to create a reproducible and robust local Docker image. Apologies for the delay. 
+- While Conda is very fast, Docker image takes ~47.8 min to build in Ubuntu 24.04.1 LTS. We aimed to create a reproducible and robust local Docker image. Apologies for the delay. 
 
 ---
 
