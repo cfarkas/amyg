@@ -48,7 +48,7 @@ python3 amyg.py --install docker
 # 3) Uninstall and purge old envs (optional):
 python3 amyg.py --purge_all_envs
 ```
-- Docker image takes ~17.5 min to build in Ubuntu 22.04.4 LTS.
+- Docker image takes ~47.8 min to build in Ubuntu 24.04.1 LTS. We aimed to create a reproducible and robust local Docker image. Apologies for the delay. 
 
 ---
 
@@ -61,7 +61,7 @@ mkdir test_docker
 python3 amyg.py \
   -a /path/to/my_genome.gtf \
   -g /path/to/my_genome.fasta \
-  -o /absolute/path/to/test_docker \
+  -o ./test_docker \
   --threads 25 \
   --use_docker
   --force
@@ -73,8 +73,8 @@ python3 amyg.py \
 ```
 mkdir test_conda
 python3 amyg.py \
-  -a my_genome.gtf \
-  -g my_genome.fasta \
+  -a /path/to/my_genome.gtf \
+  -g /path/to/my_genome.fasta \
   -o ./test_conda \
   --threads 25 \
   --use_conda \
@@ -108,6 +108,36 @@ Downloads `annotate_gtf.py` and merges final hits into `final_annotated.gtf`.
 
 **Organizes** final results in `final_results/` subfolder and leftover TransDecoder outputs in `transdecoder_results/`.
 
+## Interested in genome-wide duplications? please run the ```--dups``` flag
+
+### 1) Docker Mode
+```
+mkdir test_docker
+python3 amyg.py \
+  -a /path/to/my_genome.gtf \
+  -g /path/to/my_genome.fasta \
+  -o ./test_docker \
+  --threads 25 \
+  --use_docker
+  --force
+  --dups
+```
+- ```--threads 25``` sets number of cpus (NCPUs) for BLAST-based GAWN annotation.
+- The output is placed in ```/absolute/path/to/test_docker/```.
+
+### 2) Conda Mode
+```
+mkdir test_conda
+python3 amyg.py \
+  -a /path/to/my_genome.gtf \
+  -g /path/to/my_genome.fasta \
+  -o ./test_conda \
+  --threads 25 \
+  --use_conda \
+  --force
+  --dups
+```
+- Enabling ```--dups``` flag will also enable ```--chunk_size``` that will slice the genome (default at 20000 bp) and will test synteny comparing all fragments vs all, and at the end will reconstruct genomic segment with strong duplication evidence across the genome. Also, it will produce ```final_annotated_dups.gtf```which contains the annotation of duplicated genes on the ```final_annotated.gtf``` file    
 ---
 
 ## Requirements
