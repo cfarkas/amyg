@@ -267,7 +267,7 @@ RUN conda run -n annotate_env conda install -c conda-forge -c bioconda -y compil
 RUN conda run -n annotate_env pip install numpy pandas matplotlib seaborn biopython intervaltree
 
 # 4) Basic check
-RUN conda run -n annotate_env python -c "import numpy, pandas, matplotlib, seaborn, Bio, intervaltree; pybedtools; print('Python packages installed correctly.')"
+RUN conda run -n annotate_env python -c "import numpy, pandas, matplotlib, seaborn, Bio, intervaltree; print('Python packages installed correctly.')"
 
 ENV PATH /opt/conda/envs/annotate_env/bin:$PATH
 WORKDIR /data
