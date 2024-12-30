@@ -96,8 +96,6 @@ python3 amyg.py \
 
 ## Detailed Steps
 
-## Detailed Steps
-
 1. **Download SwissProt**  
    - Automatically fetches `swissprot.tar.gz` from the NCBI BLAST FTP server and unpacks it into the `database/` folder.
 
