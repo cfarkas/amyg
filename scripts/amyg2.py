@@ -226,6 +226,7 @@ dependencies:
   - procps-ng
   - tqdm
   - python=3.9
+  - pybedtools
 """
 
 
@@ -263,7 +264,7 @@ RUN conda env create -f /tmp/environment.yml && conda clean -afy
 RUN conda run -n annotate_env conda install -c conda-forge -c bioconda -y compilers
 
 # 3) Pip install the Python data libraries
-RUN conda run -n annotate_env pip install numpy pandas matplotlib seaborn biopython intervaltree pybedtools
+RUN conda run -n annotate_env pip install numpy pandas matplotlib seaborn biopython intervaltree
 
 # 4) Basic check
 RUN conda run -n annotate_env python -c "import numpy, pandas, matplotlib, seaborn, Bio, intervaltree; pybedtools; print('Python packages installed correctly.')"
