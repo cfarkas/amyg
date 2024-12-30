@@ -96,21 +96,28 @@ python3 amyg.py \
 
 ## Detailed Steps
 
-**1. Download SwissProt**  
-The script downloads `swissprot.tar.gz` from the NCBI BLAST ftp server, unpacks it into `database/`.
+## Detailed Steps
 
-**2. Create `gawn_config.sh`**  
-- In Docker mode, `SWISSPROT_DB` is set to `/data/database/swissprot`.
-- In Conda mode, the pipeline copies SwissProt locally into `gawn/03_data` and sets `SWISSPROT_DB` to `03_data/swissprot`.
+1. **Download SwissProt**  
+   - Automatically fetches `swissprot.tar.gz` from the NCBI BLAST FTP server and unpacks it into the `database/` folder.
 
-**3. Runs GAWN**  
-BLAST progress is monitored every 60s, printing how many lines `transcriptome.swissprot` has so far.
+2. **Create `gawn_config.sh`**  
+   - **Docker mode** sets `SWISSPROT_DB` to `/data/database/swissprot`.  
+   - **Conda mode** copies SwissProt into `gawn/03_data` and sets `SWISSPROT_DB` to `03_data/swissprot`.
 
-**3. TransDecoder**  
-Identifies **longest ORFs** → Predicts **coding regions**.
+3. **Run GAWN**  
+   - BLAST progress is monitored every 60 seconds, logging how many lines appear in `transcriptome.swissprot`.
 
-**4. Annotates GTF**  
-Downloads `annotate_gtf.py` and merges final hits into `final_annotated.gtf`.
+4. **TransDecoder**  
+   - Discovers **longest ORFs** and **predicts coding regions**.
+
+5. **Annotate GTF**  
+   - Downloads `annotate_gtf.py` and merges final hits into `final_annotated.gtf`.
+   - Outputs organized to `final_results/`, with any remaining TransDecoder files moved to `transdecoder_results/`.
+
+6. **Usage with Optional `--dups`**
+--dups enables chunk-based synteny BLAST via amyg_syntenyblast.py to identify potential duplicated regions.
+--chunk_size controls the size of each FASTA split for BLAST runs when --dups is used.
 
 **Organizes** final results in `final_results/` subfolder and leftover TransDecoder outputs in `transdecoder_results/`.
 
