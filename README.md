@@ -13,9 +13,10 @@ Currently, the pipeline can run through:
 ```
 python3 amyg.py --help
 
-usage: amyg.py [-h] [--install {conda,docker}] [--use_conda] [--use_docker] [--threads THREADS] [--force] [--purge_all_envs] [-o OUTPUT] [-a A] [-g G]
+usage: amyg.py [-h] [--install {conda,docker}] [--use_conda] [--use_docker] [--threads THREADS] [--force] [--purge_all_envs] [--dups]
+               [--chunk_size CHUNK_SIZE] [-o OUTPUT] [-a A] [-g G]
 
-annotation pipeline that aims to annotate a de novo sequenced genomes (draft or complete) using RNA-seq evidence.
+annotation pipeline that aims to annotate a de novo sequenced genome using RNA-seq plus optional synteny BLAST for duplicates.
 
 options:
   -h, --help            show this help message and exit
@@ -23,9 +24,12 @@ options:
                         Install environment and exit.
   --use_conda           Run commands in conda env
   --use_docker          Run commands in docker image
-  --threads THREADS     Number of CPUs (NCPUS) for gawn_config.sh
+  --threads THREADS     Number of CPUs (NCPUs) for gawn_config.sh
   --force               Overwrite database and gawn_config.sh if present
   --purge_all_envs      Remove the conda env and docker image, then exit.
+  --dups                Enable chunk-based synteny BLAST to find duplicates (will run amyg_syntenyblast.py).
+  --chunk_size CHUNK_SIZE
+                        Chunk size for synteny-based duplication step (only used if --dups is enabled).
   -o OUTPUT, --output OUTPUT
                         Output directory (must exist)
   -a A                  StringTie GTF
@@ -63,11 +67,12 @@ python3 amyg.py \
   -g /path/to/my_genome.fasta \
   -o ./test_docker \
   --threads 25 \
-  --use_docker
+  --use_docker \
   --force
 ```
+
 - ```--threads 25``` sets number of cpus (NCPUs) for BLAST-based GAWN annotation.
-- The output is placed in ```/absolute/path/to/test_docker/```.
+- The output is placed in ```./test_docker```.
 
 ### 2) Conda Mode
 ```
@@ -80,6 +85,7 @@ python3 amyg.py \
   --use_conda \
   --force
 ```
+- The output is placed in ```./test_conda```.
 
 #### Notes:
 
@@ -118,13 +124,10 @@ python3 amyg.py \
   -g /path/to/my_genome.fasta \
   -o ./test_docker \
   --threads 25 \
-  --use_docker
-  --force
+  --use_docker \
+  --force \
   --dups
 ```
-- ```--threads 25``` sets number of cpus (NCPUs) for BLAST-based GAWN annotation.
-- The output is placed in ```/absolute/path/to/test_docker/```.
-
 ### 2) Conda Mode
 ```
 mkdir test_conda
@@ -134,7 +137,7 @@ python3 amyg.py \
   -o ./test_conda \
   --threads 25 \
   --use_conda \
-  --force
+  --force \
   --dups
 ```
 - Enabling ```--dups``` flag will also enable ```--chunk_size``` that will slice the genome (default at 20000 bp) and will test synteny comparing all fragments vs all, and at the end will reconstruct genomic segment with strong duplication evidence across the genome. Also, it will produce ```final_annotated_dups.gtf```which contains the annotation of duplicated genes on the ```final_annotated.gtf``` file    
