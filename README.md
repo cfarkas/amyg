@@ -58,10 +58,10 @@ Currently there are two ways to run the pipeline:
 ```
 mkdir test_docker
 python3 amyg.py \
-  -a /path/to/genes.gtf \
-  -g /path/to/genome.fasta \
-  --threads 25 \
+  -a /path/to/my_genome.gtf \
+  -g /path/to/my_genome.fasta \
   -o /absolute/path/to/test_docker \
+  --threads 25 \
   --use_docker
   --force
 ```
@@ -72,10 +72,10 @@ python3 amyg.py \
 ```
 mkdir test_conda
 python3 amyg.py \
-  -a gtf.unique_gene_id.gtf \
-  -g genome.fasta \
-  --threads 25 \
+  -a my_genome.gtf \
+  -g my_genome.fasta \
   -o ./test_conda \
+  --threads 25 \
   --use_conda \
   --force
 ```
