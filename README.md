@@ -119,7 +119,7 @@ Downloads `annotate_gtf.py` and merges final hits into `final_annotated.gtf`.
 
 ### Troubleshooting
 
-**Ctrl+C**  
+**Ctrl+C** in the middle of a run 
 Kills Docker containers so you don’t have to manually do it.
 
 **Permission**  
