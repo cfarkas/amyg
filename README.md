@@ -15,7 +15,7 @@ python3 amyg.py --help
 
 usage: amyg.py [-h] [--install {conda,docker}] [--use_conda] [--use_docker] [--threads THREADS] [--force] [--purge_all_envs] [-o OUTPUT] [-a A] [-g G]
 
-Run pipeline with environment, database, dynamic gawn_config.sh. Overwrite with --force.
+annotation pipeline that aims to annotate a de novo sequenced genomes (draft or complete) using RNA-seq evidence.
 
 options:
   -h, --help            show this help message and exit
