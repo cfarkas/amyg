@@ -121,7 +121,7 @@ python3 amyg.py \
 
 **Organizes** final results in `final_results/` subfolder and leftover TransDecoder outputs in `transdecoder_results/`.
 
-## Interested in genome-wide duplications? please run the ```--dups``` flag
+## Interested in genome-wide duplications? please run with ```--dups``` flag
 
 ### 1) Docker Mode
 ```
