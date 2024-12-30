@@ -201,6 +201,7 @@ dependencies:
   - seaborn
   - biopython
   - intervaltree
+  - pybedtools
 """
     else:
         # Minimal environment => conda + pip for final libs
@@ -262,10 +263,10 @@ RUN conda env create -f /tmp/environment.yml && conda clean -afy
 RUN conda run -n annotate_env conda install -c conda-forge -c bioconda -y compilers
 
 # 3) Pip install the Python data libraries
-RUN conda run -n annotate_env pip install numpy pandas matplotlib seaborn biopython intervaltree
+RUN conda run -n annotate_env pip install numpy pandas matplotlib seaborn biopython intervaltree pybedtools
 
 # 4) Basic check
-RUN conda run -n annotate_env python -c "import numpy, pandas, matplotlib, seaborn, Bio, intervaltree; print('Python packages installed correctly.')"
+RUN conda run -n annotate_env python -c "import numpy, pandas, matplotlib, seaborn, Bio, intervaltree; pybedtools; print('Python packages installed correctly.')"
 
 ENV PATH /opt/conda/envs/annotate_env/bin:$PATH
 WORKDIR /data
