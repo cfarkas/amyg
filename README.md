@@ -114,7 +114,7 @@ python3 amyg.py \
    - Outputs organized to `final_results/`, with any remaining TransDecoder files moved to `transdecoder_results/`.
 
 6. **Usage with Optional `--dups`**
---dups enables chunk-based synteny BLAST via amyg_syntenyblast.py to identify potential duplicated regions.
+--dups enables chunk-based synteny BLAST via ```amyg_syntenyblast.py``` to identify potential duplicated regions.
 --chunk_size controls the size of each FASTA split for BLAST runs when --dups is used.
 
 **Organizes** final results in `final_results/` subfolder and leftover TransDecoder outputs in `transdecoder_results/`.
@@ -131,7 +131,8 @@ python3 amyg.py \
   --threads 25 \
   --use_docker \
   --force \
-  --dups
+  --dups \
+  --chunk_size 20000
 ```
 ### 2) Conda Mode
 ```
@@ -143,7 +144,8 @@ python3 amyg.py \
   --threads 25 \
   --use_conda \
   --force \
-  --dups
+  --dups \
+  --chunk_size 20000
 ```
 - Enabling ```--dups``` flag will also enable ```--chunk_size``` that will slice the genome (default at 20000 bp) and will test synteny comparing all fragments vs all, and at the end will reconstruct genomic segment with strong duplication evidence across the genome. Also, it will produce ```final_annotated_dups.gtf```which contains the annotation of duplicated genes on the ```final_annotated.gtf``` file    
 ---
