@@ -263,7 +263,7 @@ def generate_plots(merged_df, out_prefix):
     merged_df_sorted = merged_df.sort_values(by='average_percent_identity')
 
     # 1) histogram
-    plt.figure(figsize=(10,6))
+    plt.figure(figsize=(12,6))
     plt.hist(merged_df_sorted['average_percent_identity'], bins=20, color='blue', alpha=0.7)
     plt.xlabel('Average Percent Identity')
     plt.ylabel('Frequency')
@@ -281,7 +281,7 @@ def generate_plots(merged_df, out_prefix):
     mean_lengths_all = grouped_all['mean']
     std_lengths_all = grouped_all['std']
 
-    plt.figure(figsize=(10,6))
+    plt.figure(figsize=(12,6))
     plt.plot(bin_centers_all, mean_lengths_all, color='red', label='Mean Alignment Length')
     plt.fill_between(bin_centers_all,
                      mean_lengths_all - std_lengths_all,
@@ -303,7 +303,7 @@ def generate_plots(merged_df, out_prefix):
     mean_lengths_20kb = grouped_20kb['mean']
     std_lengths_20kb = grouped_20kb['std']
 
-    plt.figure(figsize=(10,6))
+    plt.figure(figsize=(12,6))
     plt.plot(bin_centers_20kb, mean_lengths_20kb, color='green', label='Mean Alignment Length (≥20kb)')
     plt.fill_between(bin_centers_20kb,
                      mean_lengths_20kb - std_lengths_20kb,
@@ -325,7 +325,7 @@ def generate_plots(merged_df, out_prefix):
     mean_alignment = grouped_trend['mean']
     std_alignment = grouped_trend['std']
 
-    plt.figure(figsize=(10,6))
+    plt.figure(figsize=(12,6))
     plt.plot(bin_centers, mean_alignment, color='purple', label='Mean Alignment Length')
     plt.fill_between(bin_centers,
                      mean_alignment - std_alignment,
@@ -344,7 +344,7 @@ def generate_plots(merged_df, out_prefix):
     clean_df = clean_df[np.isfinite(clean_df['average_percent_identity']) & np.isfinite(clean_df['alignment_length_bp'])]
     clean_df = clean_df[clean_df['alignment_length_bp'] > 0]
 
-    plt.figure(figsize=(10,6))
+    plt.figure(figsize=(12,6))
     kde = sns.kdeplot(
         x=clean_df['average_percent_identity'],
         y=clean_df['alignment_length_bp'],
