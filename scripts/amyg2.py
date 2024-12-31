@@ -149,18 +149,18 @@ class SwissprotMonitor(threading.Thread):
 
 
 def run_gawn_with_monitor(gawn_command, file_path, use_conda, use_docker, output_dir):
-    """
-    Runs GAWN in the foreground while a background thread
-    prints the line count of 'transcriptome.swissprot' every 60s.
-    """
-    monitor = SwissprotMonitor(file_path=file_path, interval=60)
+    monitor = SwissprotMonitor(
+        file_path=file_path, 
+        interval=60, 
+        max_stale_intervals=3  # or however many you want
+    )
     monitor.start()
     try:
         run_pipeline_command(gawn_command, use_conda, use_docker, output_dir)
     finally:
+        # If GAWN finishes earlier than monitor logic, ensure thread is stopped:
         monitor.stop()
         monitor.join()
-
 
 ###############################################################################
 # ENVIRONMENT FILES (conda/docker)
