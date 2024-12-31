@@ -123,23 +123,44 @@ def run_pipeline_command(cmd, use_conda, use_docker, output_dir):
 ###############################################################################
 # BLAST progress monitor: track lines in transcriptome.swissprot
 ###############################################################################
-def run_gawn_with_monitor(gawn_command, file_path, use_conda, use_docker, output_dir):
+class SwissprotMonitor(threading.Thread):
     """
-    A simpler approach:
-      1) Run the gawn_command immediately (no separate threads).
-      2) When finished, check if transcriptome.swissprot exists and print total lines.
+    A background thread that, every 'interval' seconds,
+    prints how many lines are in 'transcriptome.swissprot' if it exists.
     """
-    # 1) Run GAWN pipeline command
-    run_pipeline_command(gawn_command, use_conda, use_docker, output_dir)
+    def __init__(self, file_path, interval=60):
+        super().__init__()
+        self.file_path = file_path
+        self.interval = interval
+        self._stop_event = threading.Event()
 
-    # 2) Once the pipeline command completes, do a single check for line count
-    if os.path.isfile(file_path):
-        with open(file_path, 'r') as f:
-            n_lines = sum(1 for _ in f)
-        logger.info(f"[BLAST progress - final check] '{file_path}' has {n_lines} lines in total.")
-    else:
-        logger.info("[BLAST progress - final check] transcriptome.swissprot was not found after pipeline.")
-        
+    def run(self):
+        while not self._stop_event.is_set():
+            time.sleep(self.interval)
+            if os.path.isfile(self.file_path):
+                with open(self.file_path, 'r') as f:
+                    n_lines = sum(1 for _ in f)
+                logger.info(f"[BLAST progress] '{self.file_path}' has {n_lines} lines so far...")
+            else:
+                logger.info("[BLAST progress] transcriptome.swissprot not created yet...")
+
+    def stop(self):
+        self._stop_event.set()
+
+
+def run_gawn_with_monitor(gawn_command, file_path, use_conda, use_docker, output_dir):
+    monitor = SwissprotMonitor(
+        file_path=file_path, 
+        interval=60, 
+        max_stale_intervals=3  # or however many you want
+    )
+    monitor.start()
+    try:
+        run_pipeline_command(gawn_command, use_conda, use_docker, output_dir)
+    finally:
+        # If GAWN finishes earlier than monitor logic, ensure thread is stopped:
+        monitor.stop()
+        monitor.join()
 
 ###############################################################################
 # ENVIRONMENT FILES (conda/docker)
@@ -489,10 +510,10 @@ def main():
     if not args.install:
         # Check environment usage
         if use_conda and not conda_env_exists():
-            logger.error("Conda environment 'annotate_env' not found. Run `--install conda` first.")
+            logger.error("Conda environment 'annotate_env' not found. Run --install conda first.")
             sys.exit(1)
         if use_docker and not docker_image_exists():
-            logger.error("Docker image 'myorg/annotate_env:latest' not found. Run `--install docker` first.")
+            logger.error("Docker image 'myorg/annotate_env:latest' not found. Run --install docker first.")
             sys.exit(1)
 
         if not os.path.isdir(output_dir):
@@ -809,4 +830,4 @@ def main():
             run_pipeline_command(annotate_dups_cmd, use_conda, use_docker, output_dir)
             logger.info("::: GTF duplication annotation completed. :::")
 
-        logger.info("::: Pipeline completed :::")
+        logger.info("::: Pipeline completed :::") 
