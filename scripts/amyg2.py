@@ -768,18 +768,31 @@ def main():
         # Step 9B: If --dups => run amyg_syntenyblast.py
         if dups:
             logger.info("::: Step 9B: Downloading & running amyg_syntenyblast.py for duplicates :::")
-            # 1) Download script
+
+            # 1) Download amyg_syntenyblast.py
             run_pipeline_command(
                 "curl -O https://raw.githubusercontent.com/cfarkas/amyg/refs/heads/main/scripts/amyg_syntenyblast.py",
-                use_conda, use_docker, output_dir
+                use_conda,
+                use_docker,
+                output_dir  # runs 'curl -O' in the container's /data or conda env
             )
             run_pipeline_command("chmod +x amyg_syntenyblast.py", use_conda, use_docker, output_dir)
 
-            # 2) Run script => pass the same reference genome as --fasta, same output, threads, chunk_size
+            # 2) Decide on a RELATIVE output directory inside the container/conda
+            #    e.g., just '.' means "current working directory" (which is /data in Docker).
+            #    Inside Docker, it’s better not to supply a huge absolute path that sits outside /data.
+            local_output_dir = "."
+
+            # In Conda mode, we can also keep it local or pass something like '.' 
+            # (assuming the script is invoked in the correct directory).
+            # Alternatively, if 'output_dir' is already a relative path, we can just do:
+            # local_output_dir = os.path.basename(output_dir)
+
+            # Run script => pass local/relative 'output_dir' to avoid absolute references
             cmd_synteny = (
                 f"PYTHONUNBUFFERED=1 python amyg_syntenyblast.py "
-                f"--fasta {g_filename} "
-                f"--output_dir {output_dir} "
+                f"--fasta {os.path.basename(g_filename)} "  # also pass just the local filename
+                f"--output_dir {local_output_dir} "         # relative path, e.g. '.'
                 f"--chunk_size {chunk_size} "
                 f"--threads {threads}"
             )
@@ -790,23 +803,26 @@ def main():
             logger.info("::: Step 9C: Downloading & running amyg_annotatedups.py for GTF duplication annotation :::")
             run_pipeline_command(
                 "curl -O https://raw.githubusercontent.com/cfarkas/amyg/refs/heads/main/scripts/amyg_annotatedups.py",
-                use_conda, use_docker, output_dir
+                use_conda,
+                use_docker,
+                output_dir
             )
             run_pipeline_command("chmod +x amyg_annotatedups.py", use_conda, use_docker, output_dir)
 
-            # We'll assume that amyg_syntenyblast.py outputs "synteny_blocks.csv" in output_dir
-            # We'll assume final_annotated.gtf is in FINAL_RESULTS_DIR => "final_annotated.gtf"
-            # We'll produce "final_annotated_dups.gtf" there too
+            # We'll assume amyg_syntenyblast.py outputs "synteny_blocks.csv" locally (i.e. in '.')
+            # We'll assume final_annotated.gtf is in the pipeline's final_results => "final_annotated.gtf"
+            # We'll produce "final_annotated_dups.gtf" in that same final_results directory
+
             final_annotated_gtf_path = os.path.join(FINAL_DIR, "final_annotated.gtf")
-            synteny_csv_path = os.path.join(output_dir, "synteny_blocks.csv")  # from amyg_syntenyblast
-            dup_annot_log = os.path.join(output_dir, "dup_annot.log")
+            # synteny_blocks.csv is presumably next to amyg_syntenyblast.py output => local path
+            synteny_csv_path = os.path.join(".", "synteny_blocks.csv")  
+            dup_annot_log = os.path.join(".", "dup_annot.log")
             final_annot_dups_path = os.path.join(FINAL_DIR, "final_annotated_dups.gtf")
 
-            # Command:
-            # python amyg_annotatedups.py final_annotated.gtf synteny_blocks.csv final_annotated_dups.gtf dup_annot.log
+            # Annotate command (relative synteny CSV & log)
             annotate_dups_cmd = (
                 f"python amyg_annotatedups.py "
-                f"{final_annotated_gtf_path} "
+                f"{final_annotated_gtf_path} "  # local path to final_annotated.gtf is still ok
                 f"{synteny_csv_path} "
                 f"{final_annot_dups_path} "
                 f"{dup_annot_log}"
@@ -815,7 +831,3 @@ def main():
             logger.info("::: GTF duplication annotation completed. :::")
 
         logger.info("::: Pipeline completed :::")
-
-
-if __name__ == "__main__":
-    main()
