@@ -149,18 +149,15 @@ class SwissprotMonitor(threading.Thread):
 
 
 def run_gawn_with_monitor(gawn_command, file_path, use_conda, use_docker, output_dir):
-    monitor = SwissprotMonitor(
-        file_path=file_path, 
-        interval=60, 
-        max_stale_intervals=3  # or however many you want
-    )
+    # Simply pass the file_path and interval; no max_stale_intervals
+    monitor = SwissprotMonitor(file_path=file_path, interval=60)
     monitor.start()
     try:
         run_pipeline_command(gawn_command, use_conda, use_docker, output_dir)
     finally:
-        # If GAWN finishes earlier than monitor logic, ensure thread is stopped:
         monitor.stop()
         monitor.join()
+
 
 ###############################################################################
 # ENVIRONMENT FILES (conda/docker)
