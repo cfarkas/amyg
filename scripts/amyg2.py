@@ -819,11 +819,12 @@ def main():
             # Annotate command (relative synteny CSV & log)
             annotate_dups_cmd = (
                 f"python amyg_annotatedups.py "
-                f"{final_annotated_gtf_path} "  # local path to final_annotated.gtf is still ok
+                f"{final_annotated_gtf_path} "
                 f"{synteny_csv_path} "
                 f"{final_annot_dups_path} "
                 f"{dup_annot_log}"
             )
+
             run_pipeline_command(annotate_dups_cmd, use_conda, use_docker, output_dir)
             logger.info("::: GTF duplication annotation completed. :::")
 
