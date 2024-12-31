@@ -9,6 +9,7 @@ import logging
 import time
 import signal
 import threading
+import glob
 
 ###############################################################################
 # GLOBAL SETTINGS
@@ -47,7 +48,6 @@ ch.setFormatter(formatter)
 logger.addHandler(fh)
 logger.addHandler(ch)
 
-
 ###############################################################################
 # HELPER FUNCTIONS
 ###############################################################################
@@ -77,7 +77,7 @@ def handle_sigint(signum, frame):
     sys.exit(1)
 
 
-# Register the SIGINT handler for Ctrl+C
+# Register the SIGINT handler
 signal.signal(signal.SIGINT, handle_sigint)
 
 
@@ -119,7 +119,6 @@ def run_pipeline_command(cmd, use_conda, use_docker, output_dir):
 
     run_cmd(full_cmd)
 
-
 ###############################################################################
 # BLAST progress monitor: track lines in transcriptome.swissprot
 ###############################################################################
@@ -149,7 +148,6 @@ class SwissprotMonitor(threading.Thread):
 
 
 def run_gawn_with_monitor(gawn_command, file_path, use_conda, use_docker, output_dir):
-    # Simply pass the file_path and interval; no max_stale_intervals
     monitor = SwissprotMonitor(file_path=file_path, interval=60)
     monitor.start()
     try:
@@ -157,7 +155,6 @@ def run_gawn_with_monitor(gawn_command, file_path, use_conda, use_docker, output
     finally:
         monitor.stop()
         monitor.join()
-
 
 ###############################################################################
 # ENVIRONMENT FILES (conda/docker)
@@ -167,10 +164,9 @@ def environment_yml_content(use_docker=False):
     Return the environment.yml content.
 
     If not use_docker => everything installed via conda (including numpy/pandas/etc).
-    If use_docker => minimal environment via conda, then pip for those libs in Dockerfile.
+    If use_docker => minimal environment plus pip for certain libs in Dockerfile.
     """
     if not use_docker:
-        # Full environment with everything in conda
         return """\
 name: annotate_env
 channels:
@@ -201,7 +197,6 @@ dependencies:
   - pybedtools
 """
     else:
-        # Minimal environment => conda + pip for final libs
         return """\
 name: annotate_env
 channels:
@@ -226,16 +221,13 @@ dependencies:
   - pybedtools
 """
 
-
 def dockerfile_content(use_docker=False):
     """
     Return Dockerfile content:
-
     If not use_docker => conda environment contains everything.
     If use_docker => partial conda + pip step, plus compilers.
     """
     if not use_docker:
-        # Dockerfile: everything installed via conda
         return """\
 FROM continuumio/miniconda3:4.8.2
 WORKDIR /opt
@@ -247,7 +239,6 @@ ENV PATH /opt/conda/envs/annotate_env/bin:$PATH
 WORKDIR /data
 """
     else:
-        # Dockerfile => partial conda => pip for final libs => compilers
         return """\
 FROM continuumio/miniconda3:4.8.2
 WORKDIR /opt
@@ -270,24 +261,19 @@ ENV PATH /opt/conda/envs/annotate_env/bin:$PATH
 WORKDIR /data
 """
 
-
 def write_environment_yml(use_docker):
     env_content = environment_yml_content(use_docker=use_docker)
     with open("environment.yml", "w") as f:
         f.write(env_content)
     log_green_info(f"environment.yml written (use_docker={use_docker}).")
 
-
 def write_dockerfile(use_docker, extra_files=None):
     df_content = dockerfile_content(use_docker=use_docker).splitlines()
-
     if extra_files:
-        pass  # If needed, we could insert COPY lines for extra_files
-
+        pass
     with open("Dockerfile", "w") as f:
         f.write("\n".join(df_content) + "\n")
     log_green_info(f"Dockerfile written (use_docker={use_docker}).")
-
 
 ###############################################################################
 # Checking Tools
@@ -297,19 +283,16 @@ def conda_run_which(tool):
     result = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return (result.returncode == 0)
 
-
 def docker_run_which(tool):
     cmd = f"docker run --rm myorg/annotate_env:latest conda run -n annotate_env which {tool}"
     result = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return (result.returncode == 0)
-
 
 def install_missing_tools_conda(missing):
     log_green_info("Installing missing tools in conda environment...")
     pkgs = " ".join(missing)
     cmd = f"conda run -n annotate_env conda install -c bioconda -c conda-forge -y {pkgs}"
     run_cmd(cmd)
-
 
 def rebuild_docker_with_missing_tools(missing):
     log_green_info("Updating environment.yml to include missing tools for Docker...")
@@ -332,7 +315,6 @@ def rebuild_docker_with_missing_tools(missing):
     write_dockerfile(use_docker=True)
     run_cmd("docker build . -t myorg/annotate_env:latest")
 
-
 def verify_tools_conda():
     log_green_info("Verifying tools in conda environment...")
     missing = []
@@ -350,7 +332,6 @@ def verify_tools_conda():
         log_green_info("All missing tools installed successfully in conda environment.")
     else:
         log_green_info("All required tools are present in the conda environment.")
-
 
 def verify_tools_docker():
     log_green_info("Verifying tools in docker image...")
@@ -371,12 +352,10 @@ def verify_tools_docker():
     else:
         log_green_info("All required tools are present in the Docker image.")
 
-
 ###############################################################################
 # Env Installation
 ###############################################################################
 def install_conda_env():
-    """Create the conda environment and verify required tools."""
     log_green_info("Installing conda environment...")
     write_environment_yml(use_docker=False)
     run_cmd("conda env create -f environment.yml")
@@ -385,9 +364,7 @@ def install_conda_env():
     log_green_info("::: Installation Complete. Exiting. :::")
     sys.exit(0)
 
-
 def install_docker_image():
-    """Build the Docker image and verify required tools."""
     log_green_info("Installing docker image...")
     write_environment_yml(use_docker=True)
     write_dockerfile(use_docker=True)
@@ -397,7 +374,6 @@ def install_docker_image():
     log_green_info("::: Installation Complete. Exiting. :::")
     sys.exit(0)
 
-
 ###############################################################################
 # Checking existence of conda env / docker image
 ###############################################################################
@@ -406,12 +382,10 @@ def conda_env_exists():
     result = subprocess.run(cmd, shell=True)
     return (result.returncode == 0)
 
-
 def docker_image_exists():
     cmd = "docker images | grep myorg/annotate_env"
     result = subprocess.run(cmd, shell=True)
     return (result.returncode == 0)
-
 
 ###############################################################################
 # Purge
@@ -427,7 +401,6 @@ def purge_all_envs():
     logger.info("All environments purged. Exiting now.")
     sys.exit(0)
 
-
 ###############################################################################
 # Copy SwissProt for conda
 ###############################################################################
@@ -440,7 +413,6 @@ def copy_swissprot_conda(db_dir, gawn_dir):
     three_data = os.path.join(gawn_dir, "03_data")
     os.makedirs(three_data, exist_ok=True)
     run_cmd(f"cp -v {db_dir}/swissprot.* {three_data}/")
-
 
 ###############################################################################
 # MAIN
@@ -525,7 +497,6 @@ def main():
             logger.error("Database or gawn_config.sh already exist in the output directory. Use --force to overwrite.")
             sys.exit(1)
 
-        # force => remove
         if force:
             if os.path.exists(db_dir):
                 shutil.rmtree(db_dir)
@@ -575,11 +546,10 @@ def main():
         run_pipeline_command("git clone https://github.com/enormandeau/gawn.git gawn",
                              use_conda, use_docker, output_dir)
 
-        # Copy transcripts/genome to GAWN data
         shutil.copy(os.path.join(output_dir, "transcripts.fa"), os.path.join(GAWN_DIR, "03_data", "transcriptome.fasta"))
         shutil.copy(os.path.join(output_dir, g_filename), os.path.join(GAWN_DIR, "03_data", "genome.fasta"))
 
-        # If conda => copy SwissProt DB -> GAWN/03_data, fix config
+        # Step 2a: fix SwissProt if conda
         if use_conda:
             copy_swissprot_conda(db_dir, GAWN_DIR)
             with open(gawn_config_path, "r") as f:
@@ -603,7 +573,7 @@ def main():
                               use_docker,
                               output_dir)
 
-        # Step 3: Extract transcriptome hits
+        # Step 3: transcriptome hits
         logger.info("::: Step 3: Extracting transcriptome hits :::")
         hits_path = os.path.join(GAWN_DIR, "04_annotation", "transcriptome.hits")
         swissprot_path = os.path.join(GAWN_DIR, "04_annotation", "transcriptome.swissprot")
@@ -629,7 +599,7 @@ def main():
         logger.info("::: Step 5: Copying outputs to final_results :::")
         FINAL_RESULTS_DIR = os.path.join(output_dir, "final_results")
         os.makedirs(FINAL_RESULTS_DIR, exist_ok=True)
-        files_to_move = [
+        to_final = [
             "transcripts.fa.transdecoder_dir/longest_orfs.gff3",
             "transcripts.fa.transdecoder_dir/longest_orfs.cds",
             "transcripts.fa.transdecoder_dir/longest_orfs.pep",
@@ -637,7 +607,7 @@ def main():
             "transcriptome.swissprot",
             "transcripts.fa"
         ]
-        for f in files_to_move:
+        for f in to_final:
             src = os.path.join(output_dir, f)
             if os.path.isfile(src):
                 shutil.move(src, FINAL_RESULTS_DIR)
@@ -654,12 +624,13 @@ def main():
             if f.startswith("pipeliner.") and f.endswith(".cmds"):
                 shutil.move(os.path.join(os.getcwd(), f), TRANSDECODER_RESULTS_DIR)
 
-        dirs_to_move = [
+        # Move any leftover directory
+        leftover_dirs = [
             "transcripts.fa.transdecoder_dir",
             "transcripts.fa.transdecoder_dir.__checkpoints",
             "transcripts.fa.transdecoder_dir.__checkpoints_longorfs"
         ]
-        for d in dirs_to_move:
+        for d in leftover_dirs:
             dpath = os.path.join(os.getcwd(), d)
             if os.path.isdir(dpath):
                 shutil.move(dpath, TRANSDECODER_RESULTS_DIR)
@@ -681,16 +652,15 @@ def main():
         ANNOTATION_TABLE = "gawn/05_results/transcriptome_annotation_table.tsv"
         TEMP_ANNOTATED_GTF = "final_annotated.gtf"
 
+        # Validate existence
         host_gtf_path = os.path.join(output_dir, gtf_basename)
         if not os.path.isfile(host_gtf_path):
             logger.error(f"Input GTF file not found in host output_dir: {host_gtf_path}")
             sys.exit(9999)
-
         host_hits_path = os.path.join(output_dir, HITS_FILE)
         if not os.path.isfile(host_hits_path):
             logger.error(f"Hits file not found in host output_dir: {host_hits_path}")
             sys.exit(9999)
-
         host_table_path = os.path.join(output_dir, ANNOTATION_TABLE)
         if not os.path.isfile(host_table_path):
             logger.error(f"Annotation table not found in host output_dir: {host_table_path}")
@@ -709,12 +679,89 @@ def main():
         else:
             logger.warning("No final_annotated.gtf found. Check if annotate_gtf.py ran correctly.")
 
-        # Step 9: (Optional) Copy transcriptome_annotation_table.tsv if desired
-        # table_src = os.path.join(output_dir, "gawn", "05_results", "transcriptome_annotation_table.tsv")
-        # if os.path.isfile(table_src):
-        #     shutil.copy(table_src, FINAL_RESULTS_DIR)
+        # ======== DO NOT MOVE leftover just yet! We'll do duplication steps first. ========
 
-        # Step 9A: Organize leftover output
+        # Step 9B: If --dups => run amyg_syntenyblast.py
+        if dups:
+            logger.info("::: Step 9B: Downloading & running amyg_syntenyblast.py for duplicates :::")
+            run_pipeline_command(
+                "curl -O https://raw.githubusercontent.com/cfarkas/amyg/refs/heads/main/scripts/amyg_syntenyblast.py",
+                use_conda, use_docker, output_dir
+            )
+            run_pipeline_command("chmod +x amyg_syntenyblast.py", use_conda, use_docker, output_dir)
+
+            local_output_dir = "."
+
+            # Distinguish conda vs docker for running the syntenyblast script
+            if use_docker:
+                # Docker mode => pass PYTHONUNBUFFERED=1
+                cmd_synteny = (
+                    f"PYTHONUNBUFFERED=1 python amyg_syntenyblast.py "
+                    f"--fasta {os.path.basename(g_filename)} "
+                    f"--output_dir {local_output_dir} "
+                    f"--chunk_size {chunk_size} "
+                    f"--threads {threads}"
+                )
+            else:
+                # Conda / local mode
+                cmd_synteny = (
+                    f"python amyg_syntenyblast.py "
+                    f"--fasta {os.path.basename(g_filename)} "
+                    f"--output_dir {local_output_dir} "
+                    f"--chunk_size {chunk_size} "
+                    f"--threads {threads}"
+                )
+
+            run_pipeline_command(cmd_synteny, use_conda, use_docker, output_dir)
+            logger.info("::: Synteny-based duplication analysis completed. :::")
+
+            logger.info("::: Step 9C: Downloading & running amyg_annotatedups.py for GTF duplication annotation :::")
+            run_pipeline_command(
+                "curl -O https://raw.githubusercontent.com/cfarkas/amyg/refs/heads/main/scripts/amyg_annotatedups.py",
+                use_conda, use_docker, output_dir
+            )
+            run_pipeline_command("chmod +x amyg_annotatedups.py", use_conda, use_docker, output_dir)
+
+            # We assume that amyg_syntenyblast.py created "synteny_blocks.csv" in '.' (i.e. /data).
+            # final_annotated.gtf is in final_results => we haven't moved leftover yet, so it's at
+            #   <output_dir>/final_results/final_annotated.gtf or /data/final_results/final_annotated.gtf in Docker
+
+            if use_docker:
+                # We can reference /data/final_results/final_annotated.gtf
+                #  and the synteny_blocks.csv => /data/synteny_blocks.csv
+                final_annotated_gtf_path = "/data/final_results/final_annotated.gtf"
+                synteny_csv_path = "/data/synteny_blocks.csv"
+                final_annot_dups_path = "/data/final_results/final_annotated_dups.gtf"
+                dup_annot_log = "/data/dup_annot.log"
+            else:
+                # Conda
+                final_annotated_gtf_path = os.path.join(FINAL_RESULTS_DIR, "final_annotated.gtf")
+                synteny_csv_path = os.path.join(".", "synteny_blocks.csv")
+                final_annot_dups_path = os.path.join(FINAL_RESULTS_DIR, "final_annotated_dups.gtf")
+                dup_annot_log = os.path.join(".", "dup_annot.log")
+
+            annotate_dups_cmd = (
+                f"python amyg_annotatedups.py "
+                f"{final_annotated_gtf_path} "
+                f"{synteny_csv_path} "
+                f"{final_annot_dups_path} "
+                f"{dup_annot_log}"
+            )
+            run_pipeline_command(annotate_dups_cmd, use_conda, use_docker, output_dir)
+            logger.info("::: GTF duplication annotation completed. :::")
+
+            # Move synteny.csv and PDF plots into final_results
+            # e.g. if Docker => they'll appear in /data, so we move them to final_results
+            synteny_csv_on_host = os.path.join(output_dir, "synteny_blocks.csv")
+            if os.path.isfile(synteny_csv_on_host):
+                shutil.move(synteny_csv_on_host, FINAL_RESULTS_DIR)
+
+            # Move PDF plots from /data to final_results
+            pdfs = glob.glob(os.path.join(output_dir, "*.pdf"))
+            for pdf_file in pdfs:
+                shutil.move(pdf_file, FINAL_RESULTS_DIR)
+
+        # ================ Only Now Do We Check Leftover & Move ================
         contents = os.listdir(output_dir)
         exclude = {
             "final_results",
@@ -738,97 +785,8 @@ def main():
         else:
             FINAL_DIR = os.path.join(output_dir, "final_results")
 
-        logger.info("::: Moving GAWN Directory :::")
-        GAWN_DIR = os.path.join(output_dir, "gawn")
-        if os.path.exists(GAWN_DIR):
-            if 'NEW_DIR' in locals():
-                logger.info(f"Moving GAWN directory to {NEW_DIR}")
-                shutil.move(GAWN_DIR, NEW_DIR)
-            else:
-                logger.info(f"Moving GAWN directory to {FINAL_DIR}")
-                shutil.move(GAWN_DIR, FINAL_DIR)
-
-        logger.info("::: GAWN Directory Moved :::")
-
-        logger.info("::: Navigating to Final Results Directory :::")
-        # Step 8: Extracting CDS and peptide sequences
-        logger.info("::: Step 8: Extracting CDS and peptide sequences to FASTA format :::")
-        run_pipeline_command("gffread -g transcripts.fa -y cds.pep longest_orfs.gff3",
-                             use_conda, use_docker, FINAL_DIR)
-        run_pipeline_command("gffread -g transcripts.fa -x cds.fa longest_orfs.gff3",
-                             use_conda, use_docker, FINAL_DIR)
-        run_pipeline_command("gffread -g transcripts.fa -w three_prime_cds_five_prime.fa longest_orfs.gff3",
-                             use_conda, use_docker, FINAL_DIR)
-
-        logger.info("::: CDS and peptide sequences have been extracted to FASTA format :::")
-
-        # Step 9B: If --dups => run amyg_syntenyblast.py
-        if dups:
-            logger.info("::: Step 9B: Downloading & running amyg_syntenyblast.py for duplicates :::")
-
-            # 1) Download amyg_syntenyblast.py
-            run_pipeline_command(
-                "curl -O https://raw.githubusercontent.com/cfarkas/amyg/refs/heads/main/scripts/amyg_syntenyblast.py",
-                use_conda,
-                use_docker,
-                output_dir  # runs 'curl -O' in the container's /data or conda env
-            )
-            run_pipeline_command("chmod +x amyg_syntenyblast.py", use_conda, use_docker, output_dir)
-
-            # 2) Decide on a RELATIVE output directory inside the container/conda
-            #    e.g., just '.' means "current working directory" (which is /data in Docker).
-            #    Inside Docker, it’s better not to supply a huge absolute path that sits outside /data.
-            local_output_dir = "."
-
-            # In Conda mode, we can also keep it local or pass something like '.' 
-            # (assuming the script is invoked in the correct directory).
-            # Alternatively, if 'output_dir' is already a relative path, we can just do:
-            # local_output_dir = os.path.basename(output_dir)
-
-            # Run script => pass local/relative 'output_dir' to avoid absolute references
-            cmd_synteny = (
-                f"PYTHONUNBUFFERED=1 python amyg_syntenyblast.py "
-                f"--fasta {os.path.basename(g_filename)} "  # also pass just the local filename
-                f"--output_dir {local_output_dir} "         # relative path, e.g. '.'
-                f"--chunk_size {chunk_size} "
-                f"--threads {threads}"
-            )
-            run_pipeline_command(cmd_synteny, use_conda, use_docker, output_dir)
-            logger.info("::: Synteny-based duplication analysis completed. :::")
-
-            # Step 9C: Download & run amyg_annotatedups.py (merging synteny_blocks + final_annotated.gtf)
-            logger.info("::: Step 9C: Downloading & running amyg_annotatedups.py for GTF duplication annotation :::")
-            run_pipeline_command(
-                "curl -O https://raw.githubusercontent.com/cfarkas/amyg/refs/heads/main/scripts/amyg_annotatedups.py",
-                use_conda,
-                use_docker,
-                output_dir
-            )
-            run_pipeline_command("chmod +x amyg_annotatedups.py", use_conda, use_docker, output_dir)
-
-            # We'll assume amyg_syntenyblast.py outputs "synteny_blocks.csv" locally (i.e. in '.')
-            # We'll assume final_annotated.gtf is in the pipeline's final_results => "final_annotated.gtf"
-            # We'll produce "final_annotated_dups.gtf" in that same final_results directory
-
-            final_annotated_gtf_path = os.path.join(FINAL_DIR, "final_annotated.gtf")
-            # synteny_blocks.csv is presumably next to amyg_syntenyblast.py output => local path
-            synteny_csv_path = os.path.join(".", "synteny_blocks.csv")  
-            dup_annot_log = os.path.join(".", "dup_annot.log")
-            final_annot_dups_path = os.path.join(FINAL_DIR, "final_annotated_dups.gtf")
-
-            # Annotate command (relative synteny CSV & log)
-            annotate_dups_cmd = (
-                f"python amyg_annotatedups.py "
-                f"{final_annotated_gtf_path} "
-                f"{synteny_csv_path} "
-                f"{final_annot_dups_path} "
-                f"{dup_annot_log}"
-            )
-
-            run_pipeline_command(annotate_dups_cmd, use_conda, use_docker, output_dir)
-            logger.info("::: GTF duplication annotation completed. :::")
-
         logger.info("::: Pipeline completed :::")
+
 
 if __name__ == "__main__":
     main()
