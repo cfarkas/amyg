@@ -123,44 +123,23 @@ def run_pipeline_command(cmd, use_conda, use_docker, output_dir):
 ###############################################################################
 # BLAST progress monitor: track lines in transcriptome.swissprot
 ###############################################################################
-class SwissprotMonitor(threading.Thread):
-    """
-    A background thread that, every 'interval' seconds,
-    prints how many lines are in 'transcriptome.swissprot' if it exists.
-    """
-    def __init__(self, file_path, interval=60):
-        super().__init__()
-        self.file_path = file_path
-        self.interval = interval
-        self._stop_event = threading.Event()
-
-    def run(self):
-        while not self._stop_event.is_set():
-            time.sleep(self.interval)
-            if os.path.isfile(self.file_path):
-                with open(self.file_path, 'r') as f:
-                    n_lines = sum(1 for _ in f)
-                logger.info(f"[BLAST progress] '{self.file_path}' has {n_lines} lines so far...")
-            else:
-                logger.info("[BLAST progress] transcriptome.swissprot not created yet...")
-
-    def stop(self):
-        self._stop_event.set()
-
-
 def run_gawn_with_monitor(gawn_command, file_path, use_conda, use_docker, output_dir):
-    monitor = SwissprotMonitor(
-        file_path=file_path, 
-        interval=60, 
-        max_stale_intervals=3  # or however many you want
-    )
-    monitor.start()
-    try:
-        run_pipeline_command(gawn_command, use_conda, use_docker, output_dir)
-    finally:
-        # If GAWN finishes earlier than monitor logic, ensure thread is stopped:
-        monitor.stop()
-        monitor.join()
+    """
+    A simpler approach:
+      1) Run the gawn_command immediately (no separate threads).
+      2) When finished, check if transcriptome.swissprot exists and print total lines.
+    """
+    # 1) Run GAWN pipeline command
+    run_pipeline_command(gawn_command, use_conda, use_docker, output_dir)
+
+    # 2) Once the pipeline command completes, do a single check for line count
+    if os.path.isfile(file_path):
+        with open(file_path, 'r') as f:
+            n_lines = sum(1 for _ in f)
+        logger.info(f"[BLAST progress - final check] '{file_path}' has {n_lines} lines in total.")
+    else:
+        logger.info("[BLAST progress - final check] transcriptome.swissprot was not found after pipeline.")
+        
 
 ###############################################################################
 # ENVIRONMENT FILES (conda/docker)
