@@ -830,4 +830,7 @@ def main():
             run_pipeline_command(annotate_dups_cmd, use_conda, use_docker, output_dir)
             logger.info("::: GTF duplication annotation completed. :::")
 
-        logger.info("::: Pipeline completed :::") 
+        logger.info("::: Pipeline completed :::")
+
+if __name__ == "__main__":
+    main()
