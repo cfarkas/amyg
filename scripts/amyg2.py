@@ -777,7 +777,7 @@ def main():
 
             # 2) Run script => pass the same reference genome as --fasta, same output, threads, chunk_size
             cmd_synteny = (
-                f"python amyg_syntenyblast.py "
+                f"PYTHONUNBUFFERED=1 python amyg_syntenyblast.py "
                 f"--fasta {g_filename} "
                 f"--output_dir {output_dir} "
                 f"--chunk_size {chunk_size} "
