@@ -13,6 +13,7 @@ import seaborn as sns
 from Bio import SeqIO
 from tqdm import tqdm
 from intervaltree import IntervalTree
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 ##############################################################################
 # CONSTANTS (internal defaults)
@@ -79,45 +80,41 @@ def create_blast_db(chunks_dir, db_fasta_path):
     command = f"hs-blastn index {db_fasta_path}"
     subprocess.run(command, shell=True, check=True)
 
-def run_blast(chunks_dir, db_fasta_path, temp_blast_dir, threads):
+def run_blast(chunks_dir, db_fasta_path, temp_blast_dir, concurrency):
     """
-    Runs hs-blastn align for each .fasta chunk in 'chunks_dir' vs. 'db_fasta_path'.
-    Writes intermediate results to 'temp_blast_dir/xxx_temp.txt',
-    merges them into 'temp_blast_dir/concatenated_blast.txt'.
-    
-    Filters:
-      - alignment ratio >= 0.50
-      - not self
-      - query length >= 0.50 of TOTAL_CONTIG_LENGTH
-      - IDENTITY_THRESHOLD, COVERAGE_THRESHOLD
+    Parallel version:
+      - Launch up to 'concurrency' parallel hs-blastn jobs for each chunked FASTA file.
+      - Each job uses '-num_threads 1' internally, to avoid oversubscribing CPU.
+      - Gathers results from all chunk alignments into a final 'concatenated_blast.txt'.
     """
     ensure_directory_exists(temp_blast_dir)
     log(f"Using temporary directory for BLAST results: {temp_blast_dir}")
 
-    # *** Minimal change: skip 'all_chunks.fasta' so we don't re-align that combined file. ***
+    # Exclude 'all_chunks.fasta' so we don't realign that combined file
     files = [
         f for f in os.listdir(chunks_dir)
         if f.endswith(".fasta") and f != "all_chunks.fasta"
     ]
 
+    # We'll collect lines from each chunk's alignment in a big list
     all_blast_lines = []
-    pbar = tqdm(total=len(files), desc="Running BLAST")
 
-    for filename in files:
+    # This function will run hs-blastn for one chunk, parse results, return lines
+    def process_chunk_file(filename):
         query_file = os.path.join(chunks_dir, filename)
         temp_output = os.path.join(temp_blast_dir, f"{filename}_temp.txt")
 
-        # We'll do outfmt 6 => tabular columns (12 fields).
         command = (
             f"hs-blastn align "
             f"-db {db_fasta_path} "
             f"-query {query_file} "
             f"-outfmt 6 "
             f"-out {temp_output} "
-            f"-num_threads {threads}"
+            f"-num_threads 1"
         )
         subprocess.run(command, shell=True, check=True)
 
+        chunk_lines = []
         with open(temp_output, "r") as temp_results:
             for line in temp_results:
                 parts = line.strip().split()
@@ -138,11 +135,25 @@ def run_blast(chunks_dir, db_fasta_path, temp_blast_dir, threads):
                 if alignment_ratio >= 0.50 and qseqid != sseqid and query_contig_ratio >= 0.50:
                     coverage = alignment_ratio * 100
                     if identity >= IDENTITY_THRESHOLD and coverage >= COVERAGE_THRESHOLD:
-                        all_blast_lines.append(line.strip())
+                        chunk_lines.append(line.strip())
 
         os.remove(temp_output)
-        pbar.update(1)
-    pbar.close()
+        return chunk_lines
+
+    # Now run up to 'concurrency' blasts in parallel
+    with ThreadPoolExecutor(max_workers=concurrency) as executor:
+        future_to_file = {}
+        for fname in files:
+            future = executor.submit(process_chunk_file, fname)
+            future_to_file[future] = fname
+
+        # Gather lines from each chunk
+        pbar = tqdm(total=len(files), desc="Running BLAST")
+        for future in as_completed(future_to_file):
+            chunk_result = future.result()  # lines from that chunk
+            all_blast_lines.extend(chunk_result)
+            pbar.update(1)
+        pbar.close()
 
     # Final concatenated
     concatenated_path = os.path.join(temp_blast_dir, "concatenated_blast.txt")
@@ -372,13 +383,14 @@ def main():
     parser.add_argument("--fasta", "-f", required=True, help="Path to the large FASTA file.")
     parser.add_argument("--output_dir", "-o", required=True, help="Output directory for chunked FASTA, BLAST DB, results, synteny, and plots.")
     parser.add_argument("--chunk_size", type=int, default=20000, help="Chunk size for splitting FASTA.")
-    parser.add_argument("--threads", type=int, default=8, help="Number of threads for hs-blastn align.")
+    # We'll interpret --threads as concurrency for chunk alignment
+    parser.add_argument("--threads", type=int, default=8, help="Number of concurrent alignments (parallel chunk processing).")
 
     args = parser.parse_args()
     fasta_file = os.path.abspath(args.fasta)
     output_dir = os.path.abspath(args.output_dir)
     chunk_size = args.chunk_size
-    threads = args.threads
+    concurrency = args.threads  # how many chunk alignments to run in parallel
 
     # 1) Create main output dir if needed
     ensure_directory_exists(output_dir)
@@ -391,12 +403,12 @@ def main():
     db_fasta_path = os.path.join(output_dir, BLAST_DB_NAME)
     create_blast_db(chunked_fasta_dir, db_fasta_path)
 
-    # 4) hs-blastn align => filtered lines => concatenated
+    # 4) hs-blastn align => filtered lines => concatenated, in parallel
     temp_blast_dir = os.path.join(output_dir, TEMP_BLAST_DIRNAME)
     run_blast(chunks_dir=chunked_fasta_dir,
               db_fasta_path=db_fasta_path,
               temp_blast_dir=temp_blast_dir,
-              threads=threads)
+              concurrency=concurrency)
 
     # 5) Load final BLAST results
     concatenated_blast_path = os.path.join(temp_blast_dir, "concatenated_blast.txt")
