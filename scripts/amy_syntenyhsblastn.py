@@ -84,7 +84,7 @@ def run_blast(chunks_dir, db_path, temp_blast_dir, threads):
     Runs hs-blastn align for each .fasta chunk in 'chunks_dir' vs. 'db_path'.
     Writes intermediate results to 'temp_blast_dir/xxx_temp.txt',
     merges them into 'temp_blast_dir/concatenated_blast.txt'.
-    
+
     Filters:
       - alignment ratio >= 0.50
       - not self
@@ -103,13 +103,14 @@ def run_blast(chunks_dir, db_path, temp_blast_dir, threads):
         temp_output = os.path.join(temp_blast_dir, f"{filename}_temp.txt")
 
         # Format 6: qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen
+        # NOTE: Updated syntax => no double-dash for hs-blastn align parameters:
         command = (
             f"hs-blastn align "
-            f"--db {db_path} "
-            f"--query {query_file} "
-            f"--outfmt \"6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen\" "
-            f"--out {temp_output} "
-            f"--threads {threads}"
+            f"-db {db_path} "
+            f"-query {query_file} "
+            f"-outfmt \"6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen\" "
+            f"-out {temp_output} "
+            f"-num_threads {threads}"
         )
         subprocess.run(command, shell=True, check=True)
 
