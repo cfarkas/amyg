@@ -587,10 +587,9 @@ def main():
             logger.error("transcriptome_annotation_table.tsv not found in '05_results'. GAWN may have failed.")
             sys.exit(9999)
 
-        # Copy them to top-level output directory
         shutil.copy(swissprot_path, output_dir)
         shutil.copy(hits_path, output_dir)
-        shutil.copy(annotation_table_path, output_dir)  # <── added line
+        shutil.copy(annotation_table_path, output_dir)  # <── new line copying the table
 
         # Step 4: TransDecoder
         logger.info("::: Step 4: Predicting coding regions using TransDecoder :::")
@@ -613,7 +612,8 @@ def main():
             "transcripts.fa.transdecoder_dir/longest_orfs.pep",
             "transcriptome.hits",
             "transcriptome.swissprot",
-            "transcripts.fa"
+            "transcripts.fa",
+            "transcriptome_annotation_table.tsv"  # <── add the table here to move into final_results
         ]
         for f in to_final:
             src = os.path.join(output_dir, f)
