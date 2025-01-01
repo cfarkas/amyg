@@ -63,7 +63,8 @@ def split_fasta(fasta_file, output_dir, chunk_size):
 def create_blast_db(chunks_dir, db_path):
     """
     Concatenate all .fasta chunks in 'chunks_dir' into 'all_chunks.fasta',
-    then calls hs-blastn index to create a DB at 'db_path'.
+    then create an hs-blastn DB at 'db_path' by simply copying
+    all_chunks.fasta => db_path and running 'hs-blastn index'.
     """
     input_fasta = os.path.join(chunks_dir, "all_chunks.fasta")
     with open(input_fasta, 'w') as outfile:
@@ -72,8 +73,10 @@ def create_blast_db(chunks_dir, db_path):
                 with open(os.path.join(chunks_dir, filename)) as infile:
                     outfile.write(infile.read())
 
-    # Using hs-blastn instead of makeblastdb:
-    command = f"hs-blastn index -dbtype nucl -in {input_fasta} -out {db_path}"
+    # Rename (or copy) 'all_chunks.fasta' to 'db_path'
+    shutil.copy(input_fasta, db_path)
+    # Then build the index with hs-blastn:
+    command = f"hs-blastn index {db_path}"
     subprocess.run(command, shell=True, check=True)
 
 def run_blast(chunks_dir, db_path, temp_blast_dir, threads):
@@ -100,7 +103,6 @@ def run_blast(chunks_dir, db_path, temp_blast_dir, threads):
         temp_output = os.path.join(temp_blast_dir, f"{filename}_temp.txt")
 
         # Format 6: qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen
-        # Using hs-blastn align instead of blastn:
         command = (
             f"hs-blastn align "
             f"--db {db_path} "
