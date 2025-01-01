@@ -80,7 +80,9 @@ def run_blast(chunks_dir, db_path, temp_blast_dir, threads):
     Runs BLASTN for each .fasta chunk in 'chunks_dir' vs. 'db_path'.
     Writes intermediate results to 'temp_blast_dir/xxx_temp.txt',
     merges them into 'temp_blast_dir/concatenated_blast.txt'.
-    
+
+    EXCLUDES the merged file 'all_chunks.fasta' from alignment.
+
     Filters:
       - alignment ratio >= 0.50
       - not self
@@ -89,7 +91,12 @@ def run_blast(chunks_dir, db_path, temp_blast_dir, threads):
     """
     ensure_directory_exists(temp_blast_dir)
     log(f"Using temporary directory for BLAST results: {temp_blast_dir}")
-    files = [f for f in os.listdir(chunks_dir) if f.endswith('.fasta')]
+
+    # Exclude 'all_chunks.fasta' from the list
+    files = [
+        f for f in os.listdir(chunks_dir)
+        if f.endswith('.fasta') and f != "all_chunks.fasta"
+    ]
 
     all_blast_lines = []
     pbar = tqdm(total=len(files), desc="Running BLAST")
@@ -98,7 +105,7 @@ def run_blast(chunks_dir, db_path, temp_blast_dir, threads):
         query_file = os.path.join(chunks_dir, filename)
         temp_output = os.path.join(temp_blast_dir, f"{filename}_temp.txt")
 
-        # Format 6: qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen
+        # Format 6: qseqid sseqid pident length mismatch gapopen qstart qend ...
         command = (
             f"blastn -query {query_file} -db {db_path} "
             f"-outfmt '6 qseqid sseqid pident length mismatch gapopen qstart qend "
@@ -130,7 +137,7 @@ def run_blast(chunks_dir, db_path, temp_blast_dir, threads):
                     if identity >= IDENTITY_THRESHOLD and coverage >= COVERAGE_THRESHOLD:
                         all_blast_lines.append(line.strip())
 
-        os.remove(temp_output)  # Clean up
+        os.remove(temp_output)
         pbar.update(1)
     pbar.close()
 
@@ -387,12 +394,9 @@ def main():
     db_path = os.path.join(output_dir, BLAST_DB_NAME)
     create_blast_db(chunked_fasta_dir, db_path)
 
-    # 3) Run BLAST -> filtered lines -> concatenated
+    # 3) Run BLAST -> filtered lines -> concatenated, EXCLUDING all_chunks.fasta
     temp_blast_dir = os.path.join(output_dir, TEMP_BLAST_DIRNAME)
-    run_blast(chunks_dir=chunked_fasta_dir,
-              db_path=db_path,
-              temp_blast_dir=temp_blast_dir,
-              threads=threads)
+    run_blast(chunks_dir=chunked_fasta_dir, db_path=db_path, temp_blast_dir=temp_blast_dir, threads=threads)
 
     # 4) Load final BLAST results
     concatenated_blast_path = os.path.join(temp_blast_dir, "concatenated_blast.txt")
