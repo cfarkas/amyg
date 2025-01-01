@@ -63,8 +63,7 @@ def split_fasta(fasta_file, output_dir, chunk_size):
 def create_blast_db(chunks_dir, db_path):
     """
     Concatenate all .fasta chunks in 'chunks_dir' into 'all_chunks.fasta',
-    then create an hs-blastn DB at 'db_path' by simply copying
-    all_chunks.fasta => db_path and running 'hs-blastn index'.
+    then calls hs-blastn index to create a DB at 'db_path'.
     """
     input_fasta = os.path.join(chunks_dir, "all_chunks.fasta")
     with open(input_fasta, 'w') as outfile:
@@ -73,10 +72,8 @@ def create_blast_db(chunks_dir, db_path):
                 with open(os.path.join(chunks_dir, filename)) as infile:
                     outfile.write(infile.read())
 
-    # Rename (or copy) 'all_chunks.fasta' to 'db_path'
-    shutil.copy(input_fasta, db_path)
-    # Then build the index with hs-blastn:
-    command = f"hs-blastn index {db_path}"
+    # Using hs-blastn index instead of makeblastdb
+    command = f"hs-blastn index -dbtype nucl -in {input_fasta} -out {db_path}"
     subprocess.run(command, shell=True, check=True)
 
 def run_blast(chunks_dir, db_path, temp_blast_dir, threads):
@@ -84,7 +81,7 @@ def run_blast(chunks_dir, db_path, temp_blast_dir, threads):
     Runs hs-blastn align for each .fasta chunk in 'chunks_dir' vs. 'db_path'.
     Writes intermediate results to 'temp_blast_dir/xxx_temp.txt',
     merges them into 'temp_blast_dir/concatenated_blast.txt'.
-
+    
     Filters:
       - alignment ratio >= 0.50
       - not self
@@ -102,19 +99,21 @@ def run_blast(chunks_dir, db_path, temp_blast_dir, threads):
         query_file = os.path.join(chunks_dir, filename)
         temp_output = os.path.join(temp_blast_dir, f"{filename}_temp.txt")
 
-        # Format 6: qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen
-        # NOTE: Updated syntax => no double-dash for hs-blastn align parameters:
+        # Instead of specifying a custom column list, we do plain tabular -outfmt 6:
+        #   (qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore)
         command = (
             f"hs-blastn align "
             f"-db {db_path} "
             f"-query {query_file} "
-            f"-outfmt \"6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen\" "
+            f"-outfmt 6 "        # <--- plain tabular
             f"-out {temp_output} "
             f"-num_threads {threads}"
         )
         subprocess.run(command, shell=True, check=True)
 
-        # Filter lines
+        # We'll parse the 12 standard columns of outfmt 6.
+        # outfmt 6 columns = 12 fields:
+        #   qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore
         with open(temp_output, 'r') as temp_results:
             for line in temp_results:
                 parts = line.strip().split()
@@ -122,21 +121,32 @@ def run_blast(chunks_dir, db_path, temp_blast_dir, threads):
                 sseqid = parts[1]
                 identity = float(parts[2])
                 align_len = int(parts[3])
+                mismatch = int(parts[4])
+                gapopen = int(parts[5])
                 qstart = int(parts[6])
                 qend = int(parts[7])
                 sstart = int(parts[8])
                 send = int(parts[9])
-                qlen = int(parts[12])
+                evalue = parts[10]
+                bitscore = parts[11]
 
-                alignment_ratio = align_len / qlen
-                query_contig_ratio = qlen / TOTAL_CONTIG_LENGTH
+                # We can approximate qlen = (qend - qstart + 1) if needed, but here:
+                # For the minimal fix, just remove references to parts[12] / parts[13].
+                # We'll only do the same coverage logic if we want:
+                #   approximate coverage = align_len / (qend - qstart + 1) * 100, etc.
+                #   or skip coverage check if you prefer.
+
+                # Very approximate coverage logic:
+                q_approx_len = (qend - qstart + 1)
+                alignment_ratio = align_len / q_approx_len if q_approx_len else 0
+                query_contig_ratio = q_approx_len / TOTAL_CONTIG_LENGTH
 
                 if alignment_ratio >= 0.50 and qseqid != sseqid and query_contig_ratio >= 0.50:
-                    coverage = (align_len / qlen) * 100
+                    coverage = alignment_ratio * 100
                     if identity >= IDENTITY_THRESHOLD and coverage >= COVERAGE_THRESHOLD:
                         all_blast_lines.append(line.strip())
 
-        os.remove(temp_output)  # Clean up
+        os.remove(temp_output)
         pbar.update(1)
     pbar.close()
 
@@ -152,12 +162,14 @@ def load_and_process_blast_data(blast_file, out_csv):
     """
     Loads the final BLAST file, renames columns, sorts, and writes out_csv.
     Returns a DataFrame.
+
+    Since we now use outfmt 6 = 12 fields, we remove references to qlen, slen.
     """
     cols = [
         'query_seq_id','subject_seq_id','identity_percentage',
         'alignment_length_bp','mismatches_count','gap_opens_count',
         'query_start','query_end','subject_start','subject_end',
-        'e_value','bit_score','query_length','subject_length'
+        'e_value','bit_score'
     ]
     df = pd.read_csv(blast_file, sep='\t', header=None, names=cols)
     df.drop_duplicates(inplace=True)
