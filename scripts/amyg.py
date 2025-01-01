@@ -574,31 +574,23 @@ def main():
                               output_dir)
 
         # Step 3: transcriptome hits
-        logger.info("::: Step 3: Extracting transcriptome hits and annotation table :::")
-
+        logger.info("::: Step 3: Extracting transcriptome hits :::")
         hits_path = os.path.join(GAWN_DIR, "04_annotation", "transcriptome.hits")
         swissprot_path = os.path.join(GAWN_DIR, "04_annotation", "transcriptome.swissprot")
-        # Copy the annotation table from 05_results
-        annotation_table_path = os.path.join(GAWN_DIR, "05_results", "transcriptome_annotation_table.tsv")
-
-        missing_files = []
-        if not os.path.isfile(hits_path):
-            missing_files.append(hits_path)
-        if not os.path.isfile(swissprot_path):
-            missing_files.append(swissprot_path)
-        if not os.path.isfile(annotation_table_path):
-            missing_files.append(annotation_table_path)
-
-        if missing_files:
-            logger.error(f"Required files missing in GAWN output: {missing_files}\nGAWN may have failed.")
+        if not os.path.isfile(hits_path) or not os.path.isfile(swissprot_path):
+            logger.error("transcriptome.hits or transcriptome.swissprot not found. GAWN may have failed.")
             sys.exit(9999)
 
-        # Copy them to the top-level output directory
+        # ──> Additional lines: Copy the annotation table from 05_results
+        annotation_table_path = os.path.join(GAWN_DIR, "05_results", "transcriptome_annotation_table.tsv")
+        if not os.path.isfile(annotation_table_path):
+            logger.error("transcriptome_annotation_table.tsv not found in '05_results'. GAWN may have failed.")
+            sys.exit(9999)
+
+        # Copy them to top-level output directory
         shutil.copy(swissprot_path, output_dir)
         shutil.copy(hits_path, output_dir)
-        shutil.copy(annotation_table_path, output_dir)
-
-        logger.info("::: Transcriptome hits and annotation table successfully extracted :::")
+        shutil.copy(annotation_table_path, output_dir)  # <── added line
 
         # Step 4: TransDecoder
         logger.info("::: Step 4: Predicting coding regions using TransDecoder :::")
@@ -640,7 +632,6 @@ def main():
             if f.startswith("pipeliner.") and f.endswith(".cmds"):
                 shutil.move(os.path.join(os.getcwd(), f), TRANSDECODER_RESULTS_DIR)
 
-        # Move any leftover directory
         leftover_dirs = [
             "transcripts.fa.transdecoder_dir",
             "transcripts.fa.transdecoder_dir.__checkpoints",
@@ -664,11 +655,10 @@ def main():
 
         gtf_basename = os.path.basename(a)
         INPUT_GTF = gtf_basename
-        HITS_FILE = "transcriptome.hits"
-        ANNOTATION_TABLE = "transcriptome_annotation_table.tsv"
+        HITS_FILE = "gawn/04_annotation/transcriptome.hits"
+        ANNOTATION_TABLE = "gawn/05_results/transcriptome_annotation_table.tsv"
         TEMP_ANNOTATED_GTF = "final_annotated.gtf"
 
-        # Validate existence
         host_gtf_path = os.path.join(output_dir, gtf_basename)
         if not os.path.isfile(host_gtf_path):
             logger.error(f"Input GTF file not found in host output_dir: {host_gtf_path}")
@@ -708,9 +698,7 @@ def main():
 
             local_output_dir = "."
 
-            # Distinguish conda vs docker for running the syntenyblast script
             if use_docker:
-                # Docker mode => pass PYTHONUNBUFFERED=1
                 cmd_synteny = (
                     f"PYTHONUNBUFFERED=1 python amyg_syntenyblast.py "
                     f"--fasta {os.path.basename(g_filename)} "
@@ -719,7 +707,6 @@ def main():
                     f"--threads {threads}"
                 )
             else:
-                # Conda / local mode
                 cmd_synteny = (
                     f"python amyg_syntenyblast.py "
                     f"--fasta {os.path.basename(g_filename)} "
@@ -739,8 +726,6 @@ def main():
             run_pipeline_command("chmod +x amyg_annotatedups.py", use_conda, use_docker, output_dir)
 
             if use_docker:
-                # We can reference /data/final_results/final_annotated.gtf
-                # and the synteny_blocks.csv => /data/synteny_blocks.csv
                 final_annotated_gtf_path = "/data/final_results/final_annotated.gtf"
                 synteny_csv_path = "/data/synteny_blocks.csv"
                 final_annot_dups_path = "/data/final_results/final_annotated_dups.gtf"
@@ -761,12 +746,10 @@ def main():
             run_pipeline_command(annotate_dups_cmd, use_conda, use_docker, output_dir)
             logger.info("::: GTF duplication annotation completed. :::")
 
-            # Move synteny.csv and PDF plots into final_results
             synteny_csv_on_host = os.path.join(output_dir, "synteny_blocks.csv")
             if os.path.isfile(synteny_csv_on_host):
                 shutil.move(synteny_csv_on_host, FINAL_RESULTS_DIR)
 
-            # Move PDF plots from /data to final_results
             pdfs = glob.glob(os.path.join(output_dir, "*.pdf"))
             for pdf_file in pdfs:
                 shutil.move(pdf_file, FINAL_RESULTS_DIR)
@@ -796,7 +779,6 @@ def main():
             FINAL_DIR = os.path.join(output_dir, "final_results")
 
         logger.info("::: Pipeline completed :::")
-
 
 if __name__ == "__main__":
     main()
