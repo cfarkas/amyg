@@ -93,7 +93,12 @@ def run_blast(chunks_dir, db_fasta_path, temp_blast_dir, threads):
     """
     ensure_directory_exists(temp_blast_dir)
     log(f"Using temporary directory for BLAST results: {temp_blast_dir}")
-    files = [f for f in os.listdir(chunks_dir) if f.endswith(".fasta")]
+
+    # *** Minimal change: skip 'all_chunks.fasta' so we don't re-align that combined file. ***
+    files = [
+        f for f in os.listdir(chunks_dir)
+        if f.endswith(".fasta") and f != "all_chunks.fasta"
+    ]
 
     all_blast_lines = []
     pbar = tqdm(total=len(files), desc="Running BLAST")
@@ -120,14 +125,10 @@ def run_blast(chunks_dir, db_fasta_path, temp_blast_dir, threads):
                 sseqid = parts[1]
                 identity = float(parts[2])
                 align_len = int(parts[3])
-                # mismatch = parts[4]
-                # gapopen = parts[5]
                 qstart = int(parts[6])
                 qend   = int(parts[7])
                 sstart = int(parts[8])
                 send   = int(parts[9])
-                # evalue = parts[10]
-                # bitscore = parts[11]
 
                 # approximate coverage logic
                 q_approx_len = (qend - qstart + 1)
@@ -362,7 +363,6 @@ def generate_plots(merged_df, out_prefix):
     plt.ylabel("Alignment Length (bp) [Log Scale]")
     plt.title("KDE of Average Percent Identity vs. Alignment Length (Log Scale)")
     plt.colorbar(kde.collections[0], label="Density")
-    plt.savefig(f"{out_prefix}_average_identity_vs_alignment_length_kde_log.pdf")
     plt.close()
 
 def main():
