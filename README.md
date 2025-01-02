@@ -157,23 +157,33 @@ amyg \
 - The results of the pipeline will be inside i.e: ```./output_folder/amyg_20250101_150629/final_results/```
 ---
 
-## Plot GO terms as a network
-- networkx is requeired. Can be installed via pip: ```pip install networkx```
-
+## Plot duplications
 - Inside i.e.: ```amyg_20250101_150629/final_results``` users can do the following 
 ```
-wget https://raw.githubusercontent.com/cfarkas/amyg/refs/heads/main/scripts/clusterGO.py
-chmod 755 clusterGO.py
-python3 clusterGO.py -a transcriptome_annotation_table.tsv -g final_annotated_dups.gtf -o ./
+wget [https://raw.githubusercontent.com/cfarkas/amyg/refs/heads/main/scripts/plot_dups.py](https://raw.githubusercontent.com/cfarkas/amyg/refs/heads/main/scripts/plot_dups.py)
+chmod 755 plot_dups.py
+
+python plot_dups.py \
+    -a transcriptome_annotation_table.tsv \
+    -g final_annotated_dups.gtf \
+    -s synteny_blocks.csv \
+    -o ./
 ```
-This script will: 
-1) Parse annotation + GTF,
-2) Build network from GO Jaccard similarity (≥0.2),
-3) Detect communities and color top 20,
-4) Save gene_network.pdf + clustered_genes.csv,
-5) Finally, produce a stacked bar plot per contig with duplication-type counts,
-   where bar width is proportional to contig size (deduced from GTF).
-   Non-top-20 communities are shown in a light grey background.
+This script will produce two stacked bar plots. 
+
+Plot A:
+  - Sorted contigs with percentage of Ancient (green), Recent (orange), Other (gray) genes
+
+Plot B:
+  - Classify *all duplications* (either “ancient” or “recent”) as:
+      * "intra-only" (blue)   if contig is found ONLY in self-synteny blocks
+      * "inter-only" (red)    if contig is found ONLY in cross-synteny blocks
+      * "both"       (black)  if contig is found in both self- & cross-synteny
+      * "other"      (gray)   if duplication_type ∉ {ancient,recent} 
+                              OR contig not found in synteny at all
+    So the bar shows how we partition the entire set of duplicated genes 
+    among (intra-only, inter-only, both). 
+
    
 ---
 ## Requirements
