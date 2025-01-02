@@ -160,7 +160,7 @@ amyg \
 ## Plot duplications
 - Inside i.e.: ```amyg_20250101_150629/final_results``` users can do the following 
 ```
-wget [https://raw.githubusercontent.com/cfarkas/amyg/refs/heads/main/scripts/plot_dups.py](https://raw.githubusercontent.com/cfarkas/amyg/refs/heads/main/scripts/plot_dups.py)
+wget https://raw.githubusercontent.com/cfarkas/amyg/refs/heads/main/scripts/plot_dups.py
 chmod 755 plot_dups.py
 
 python plot_dups.py \
