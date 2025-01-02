@@ -46,7 +46,7 @@ Via pip:
 ```
 pip install amyg
 ```
-Then users can decide to install all requirements via conda or docker as follows: 
+Then, users can decide to install all requirements via conda or docker as follows: 
 
 ```bash
 # 1) Install conda environment:
