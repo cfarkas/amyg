@@ -72,7 +72,7 @@ python3 amyg.py \
 ```
 
 - ```--threads 25``` sets number of cpus (NCPUs) for BLAST-based GAWN annotation.
-- The output is placed in ```./test_docker```.
+- The output is placed in ```./test_docker```. The main results of the pipeline will be inside i.e: ```./test_docker/amyg_20250101_150629/final_results/```
 
 ### 2) Conda Mode
 ```
@@ -85,7 +85,7 @@ python3 amyg.py \
   --use_conda \
   --force
 ```
-- The output is placed in ```./test_conda```.
+- The output is placed in ```./test_conda```. The main results of the pipeline will be inside i.e: ```./test_conda/amyg_20250101_150629/final_results/```
 
 #### Notes:
 
@@ -148,8 +148,27 @@ python3 amyg.py \
   --chunk_size 20000
 ```
 - Enabling ```--dups``` flag will also enable ```--chunk_size``` that will slice the genome (default at 20000 bp) and will test synteny comparing all fragments vs all, and at the end will reconstruct genomic segment with strong duplication evidence across the genome. Also, it will produce ```final_annotated_dups.gtf```which contains the annotation of duplicated genes on the ```final_annotated.gtf``` file    
+- The results of the pipeline will be inside i.e: ```./output_folder/amyg_20250101_150629/final_results/```
 ---
 
+## Plot GO terms as a network
+
+- Inside i.e.: ```amyg_20250101_150629/final_results``` users can do the following 
+```
+wget https://raw.githubusercontent.com/cfarkas/amyg/refs/heads/main/scripts/clusterGO.py
+chmod 755 clusterGO.py
+python3 clusterGO.py -a transcriptome_annotation_table.tsv -g final_annotated_dups.gtf -o ./
+```
+This script will: 
+1) Parse annotation + GTF,
+2) Build network from GO Jaccard similarity (≥0.2),
+3) Detect communities and color top 20,
+4) Save gene_network.pdf + clustered_genes.csv,
+5) Finally, produce a stacked bar plot per contig with duplication-type counts,
+   where bar width is proportional to contig size (deduced from GTF).
+   Non-top-20 communities are shown in a light grey background.
+   
+---
 ## Requirements
 
 - **Python 3.7+**  
