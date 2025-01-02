@@ -11,9 +11,9 @@ Currently, the pipeline can run through:
 
 ## Synopsis
 ```
-python3 amyg.py --help
+amyg --help
 
-usage: amyg.py [-h] [--install {conda,docker}] [--use_conda] [--use_docker] [--threads THREADS] [--force] [--purge_all_envs] [--dups]
+usage: amyg [-h] [--install {conda,docker}] [--use_conda] [--use_docker] [--threads THREADS] [--force] [--purge_all_envs] [--dups]
                [--chunk_size CHUNK_SIZE] [-o OUTPUT] [-a A] [-g G]
 
 annotation pipeline that aims to annotate a de novo sequenced genome using RNA-seq plus optional synteny BLAST for duplicates.
@@ -42,17 +42,23 @@ options:
 
 ## Installation
 
+Via pip: 
+```
+pip install amyg
+```
+Then users can decide to install all requirements via conda or docker as follows: 
+
 ```bash
 # 1) Install conda environment:
-python3 amyg.py --install conda
+amyg --install conda
 
 # 2) Install docker image:
-python3 amyg.py --install docker
+amyg --install docker
 
 # 3) Uninstall and purge old envs (optional):
-python3 amyg.py --purge_all_envs
+amyg --purge_all_envs
 ```
-- While Conda is fast, Docker image takes ~47.8 min to build in Ubuntu 24.04.1 LTS. We aimed to create a reproducible and robust local Docker image. Apologies for the delay. 
+- While Conda is faster, Docker image takes ~47.8 min to build in Ubuntu 24.04.1 LTS. We aimed to create a reproducible and robust local Docker image. Apologies for the delay. 
 
 ---
 
@@ -62,7 +68,7 @@ Currently there are two ways to run the pipeline:
 ### 1) Docker Mode
 ```
 mkdir test_docker
-python3 amyg.py \
+amyg \
   -a /path/to/my_genome.gtf \
   -g /path/to/my_genome.fasta \
   -o ./test_docker \
@@ -77,7 +83,7 @@ python3 amyg.py \
 ### 2) Conda Mode
 ```
 mkdir test_conda
-python3 amyg.py \
+amyg \
   -a /path/to/my_genome.gtf \
   -g /path/to/my_genome.fasta \
   -o ./test_conda \
@@ -124,7 +130,7 @@ python3 amyg.py \
 ### 1) Docker Mode
 ```
 mkdir test_docker
-python3 amyg.py \
+amyg \
   -a /path/to/my_genome.gtf \
   -g /path/to/my_genome.fasta \
   -o ./test_docker \
@@ -137,7 +143,7 @@ python3 amyg.py \
 ### 2) Conda Mode
 ```
 mkdir test_conda
-python3 amyg.py \
+amyg \
   -a /path/to/my_genome.gtf \
   -g /path/to/my_genome.fasta \
   -o ./test_conda \
