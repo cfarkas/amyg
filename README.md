@@ -59,7 +59,7 @@ python3 amyg.py --purge_all_envs
 ## Run
 Currently there are two ways to run the pipeline:
 
-#### 1) Docker Mode
+### 1) Docker Mode
 ```
 mkdir test_docker
 python3 amyg.py \
@@ -74,7 +74,7 @@ python3 amyg.py \
 - ```--threads 25``` sets number of cpus (NCPUs) for BLAST-based GAWN annotation.
 - The output is placed in ```./test_docker```. The main results of the pipeline will be inside i.e: ```./test_docker/amyg_20250101_150629/final_results/```
 
-#### 2) Conda Mode
+### 2) Conda Mode
 ```
 mkdir test_conda
 python3 amyg.py \
@@ -121,7 +121,7 @@ python3 amyg.py \
 
 ## Interested in genome-wide duplications? please run with ```--dups``` flag
 
-#### 1) Docker Mode
+### 1) Docker Mode
 ```
 mkdir test_docker
 python3 amyg.py \
@@ -134,7 +134,7 @@ python3 amyg.py \
   --dups \
   --chunk_size 20000
 ```
-#### 2) Conda Mode
+### 2) Conda Mode
 ```
 mkdir test_conda
 python3 amyg.py \
