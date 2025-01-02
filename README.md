@@ -9,6 +9,8 @@ Currently, the pipeline can run through:
 1. **Conda**  (an environment called `annotate_env` will be created in your system)
 2. **Docker** (with an auto-built image `myorg/annotate_env:latest`)
 
+- See https://pypi.org/project/amyg/0.1.1/
+
 ## Synopsis
 ```
 amyg --help
@@ -37,7 +39,6 @@ options:
 ```
 
 **amyg** is the next version of [annotate_my_genomes](https://github.com/cfarkas/annotate_my_genomes) but streamlines the installation and there is no need for separate config files. 
-- See https://pypi.org/project/amyg/0.1.1/ 
 
 ---
 
