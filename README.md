@@ -158,6 +158,7 @@ amyg \
 ---
 
 ## Plot GO terms as a network
+- networkx is requeired. Can be installed via pip: ```pip install networkx```
 
 - Inside i.e.: ```amyg_20250101_150629/final_results``` users can do the following 
 ```
