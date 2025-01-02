@@ -4,8 +4,8 @@ import setuptools
 setuptools.setup(
     name="amyg",
     version="0.1.0",             # adjust as needed
-    author="Your Name",
-    author_email="your_email@example.com",
+    author="Carlos Farkas",
+    author_email="carlosfarkas@gmail.com",
     description="A pipeline for De Novo Genomic Annotation of Non-Model Organisms",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
