@@ -1,4 +1,4 @@
-![amyg_avatar](amyg.tif)
+!(amyg.tif)
 # **amyg**: A Pipeline for De Novo Genomic Annotation of Non-Model Organisms
 
 **amyg.py** is a Python-based annotation pipeline that aims to annotate a de novo sequenced genomes (draft or complete) using RNA-seq evidence. Currently the pipeline:
