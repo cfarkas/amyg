@@ -1,5 +1,3 @@
-![image](https://user-images.githubusercontent.com/7016350/108611599-a6319f00-73a5-11eb-89b7-3cfd44b00cc5.png)
-
 # **amyg**: A Pipeline for De Novo Genomic Annotation of Non-Model Organisms
 
 **amyg.py** is a Python-based annotation pipeline that aims to annotate a de novo sequenced genomes (draft or complete) using RNA-seq evidence. Currently the pipeline:
