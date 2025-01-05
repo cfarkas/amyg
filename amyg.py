@@ -437,6 +437,13 @@ def main():
     parser.add_argument("-a", help="StringTie GTF")
     parser.add_argument("-g", help="Reference genome (in fasta format)")
 
+    ############################################################################
+    # (NEW LINES) EXTENSIONS FOR --preprocessing + optional --egap_gtf
+    ############################################################################
+    parser.add_argument("--preprocessing", action="store_true",
+                        help="Preprocess GTF using unique_gene_id.py. If --egap_gtf is also provided, then also run merge_stringtie_names.py.")
+    parser.add_argument("--egap_gtf", help="EGAP GTF for merging (only used if --preprocessing is true).")
+
     args = parser.parse_args()
 
     # if purge
@@ -448,6 +455,54 @@ def main():
         install_conda_env()
     elif args.install == "docker":
         install_docker_image()
+
+    # (NEW LINES) PROCESS --preprocessing
+    if args.preprocessing:
+        if not args.a:
+            logger.error("--preprocessing requires -a <some.gtf> to run unique_gene_id.py.")
+            sys.exit(1)
+        mygtf_path = os.path.abspath(args.a)
+        # Step 1: download & run unique_gene_id.py
+        log_green_info("=== Preprocessing: Downloading unique_gene_id.py ===")
+        run_cmd("wget https://raw.githubusercontent.com/cfarkas/amyg/refs/heads/main/third_parties/unique_gene_id.py")
+        run_cmd("chmod 755 unique_gene_id.py")
+        log_green_info(f"Running: python unique_gene_id.py {mygtf_path}")
+        run_cmd(f"python unique_gene_id.py {mygtf_path}")
+
+        # The script typically produces: mygtf.gtf => mygtf.unique_gene_id.gtf
+        # We'll guess the suffix:
+        unique_gtf = mygtf_path.replace(".gtf", ".unique_gene_id.gtf")
+        if not os.path.isfile(unique_gtf):
+            # If user had a different extension, we can do a quick glob check
+            pattern = mygtf_path + ".*_gene_id.gtf"
+            matches = glob.glob(pattern)
+            if len(matches)==1:
+                unique_gtf = matches[0]
+                log_green_info(f"Detected unique gene GTF => {unique_gtf}")
+            else:
+                logger.error("Could not find the expected *.unique_gene_id.gtf after running unique_gene_id.py. Exiting.")
+                sys.exit(1)
+
+        if args.egap_gtf:
+            # Step 2: download & run merge_stringtie_names.py
+            egap_path = os.path.abspath(args.egap_gtf)
+            log_green_info("=== Preprocessing: Downloading merge_stringtie_names.py ===")
+            run_cmd("wget https://raw.githubusercontent.com/cfarkas/amyg/refs/heads/main/scripts/merge_stringtie_names.py")
+            run_cmd("chmod 755 merge_stringtie_names.py")
+            out_gtf = "transcripts_named.gtf"
+            cmd_merge = (
+                f"python merge_stringtie_names.py "
+                f"--stringtie_gtf {unique_gtf} "
+                f"--egap_gtf {egap_path} "
+                f"--output_gtf {out_gtf}"
+            )
+            log_green_info(f"Running: {cmd_merge}")
+            run_cmd(cmd_merge)
+            log_green_info(f"Transcripts named => {out_gtf}")
+
+        # Done with preprocessing => exit
+        sys.exit(0)
+    # (END OF NEW LINES)
 
     # normal mode
     if not args.install:
@@ -731,9 +786,9 @@ def main():
                 final_annot_dups_path = "/data/final_results/final_annotated_dups.gtf"
                 dup_annot_log = "/data/dup_annot.log"
             else:
-                final_annotated_gtf_path = os.path.join(FINAL_RESULTS_DIR, "final_annotated.gtf")
+                final_annotated_gtf_path = os.path.join(output_dir, "final_results", "final_annotated.gtf")
                 synteny_csv_path = os.path.join(".", "synteny_blocks.csv")
-                final_annot_dups_path = os.path.join(FINAL_RESULTS_DIR, "final_annotated_dups.gtf")
+                final_annot_dups_path = os.path.join(output_dir, "final_results", "final_annotated_dups.gtf")
                 dup_annot_log = os.path.join(".", "dup_annot.log")
 
             annotate_dups_cmd = (
@@ -748,11 +803,11 @@ def main():
 
             synteny_csv_on_host = os.path.join(output_dir, "synteny_blocks.csv")
             if os.path.isfile(synteny_csv_on_host):
-                shutil.move(synteny_csv_on_host, FINAL_RESULTS_DIR)
+                shutil.move(synteny_csv_on_host, os.path.join(output_dir, "final_results"))
 
             pdfs = glob.glob(os.path.join(output_dir, "*.pdf"))
             for pdf_file in pdfs:
-                shutil.move(pdf_file, FINAL_RESULTS_DIR)
+                shutil.move(pdf_file, os.path.join(output_dir, "final_results"))
 
         # ================ Only Now Do We Check Leftover & Move ================
         contents = os.listdir(output_dir)
@@ -770,8 +825,8 @@ def main():
             NEW_DIR = os.path.join(output_dir, f"amyg_{TIMESTAMP}")
             os.makedirs(NEW_DIR, exist_ok=True)
             logger.info(f"Moving organized results to {NEW_DIR} due to existing content in the output directory")
-            if os.path.exists(FINAL_RESULTS_DIR):
-                shutil.move(FINAL_RESULTS_DIR, os.path.join(NEW_DIR, "final_results"))
+            if os.path.exists(os.path.join(output_dir, "final_results")):
+                shutil.move(os.path.join(output_dir, "final_results"), os.path.join(NEW_DIR, "final_results"))
             if os.path.exists(os.path.join(output_dir, "transdecoder_results")):
                 shutil.move(os.path.join(output_dir, "transdecoder_results"), os.path.join(NEW_DIR, "transdecoder_results"))
             FINAL_DIR = os.path.join(NEW_DIR, "final_results")
