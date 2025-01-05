@@ -10,7 +10,7 @@ Currently, the pipeline can run through:
 1. **Conda**  (an environment called `annotate_env` will be created in your system)
 2. **Docker** (with an auto-built image `myorg/annotate_env:latest`)
 
-- See https://pypi.org/project/amyg/0.1.1/ 
+- See https://pypi.org/project/amyg/0.1.2/ 
 
 ## Synopsis
 ```
