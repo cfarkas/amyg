@@ -1,7 +1,7 @@
 ![My Image](amyg.png)
 # **amyg**: A Pipeline for De Novo Genomic Annotation of Non-Model Organisms
 
-**amyg.py** is a Python-based annotation pipeline that aims to annotate a de novo sequenced genomes (draft or complete) using RNA-seq evidence. Currently the pipeline:
+**amyg** is a Python-based annotation pipeline that aims to annotate a de novo sequenced genomes (draft or complete) using RNA-seq evidence. Currently the pipeline:
 - Performs GTF processing from StringTie outputs  
 - Generates gene annotation using [GAWN](https://github.com/enormandeau/gawn) with SwissProt/BLAST integration  
 - Resolve transcriptome coding potential with **TransDecoder**, producing **longest ORFs**, **CDS**, and **peptide** sequences for each transcript.     
@@ -17,11 +17,11 @@ Currently, the pipeline can run through:
 amyg --help
 
 usage: amyg [-h] [--install {conda,docker}] [--use_conda] [--use_docker] [--threads THREADS] [--force] [--purge_all_envs] [--dups]
-               [--chunk_size CHUNK_SIZE] [-o OUTPUT] [-a A] [-g G]
+               [--chunk_size CHUNK_SIZE] [-o OUTPUT] [-a A] [-g G] [--preprocessing] [--egap_gtf EGAP_GTF]
 
 annotation pipeline that aims to annotate a de novo sequenced genome using RNA-seq plus optional synteny BLAST for duplicates.
 
-options:
+optional arguments:
   -h, --help            show this help message and exit
   --install {conda,docker}
                         Install environment and exit.
@@ -37,6 +37,8 @@ options:
                         Output directory (must exist)
   -a A                  StringTie GTF
   -g G                  Reference genome (in fasta format)
+  --preprocessing       Preprocess GTF using unique_gene_id.py. If --egap_gtf is also provided, then also run merge_stringtie_names.py.
+  --egap_gtf EGAP_GTF   EGAP GTF for merging (only used if --preprocessing is true).
 ```
 
 **amyg** is the next version of [annotate_my_genomes](https://github.com/cfarkas/annotate_my_genomes) but streamlines the installation and there is no need for separate config files. 
@@ -128,6 +130,34 @@ amyg \
 
 **Organizes** final results in `final_results/` subfolder and leftover TransDecoder outputs in `transdecoder_results/`.
 
+---
+## Preprocessing your stringtie.gtf using ```--preprocessing``` flag
+
+Sometimes you need to clean or prepare your GTF file before running the main annotation pipeline. The --preprocessing flag lets you do just that. Here's what it does in detail:
+
+1) Run unique_gene_id.py
+
+This script ensures all gene_id fields in your GTF are truly unique. For any conflicting gene_ids (e.g., multiple transcripts with the same gene_name), it automatically appends a suffix to avoid collisions.
+The output is a new GTF (e.g., mygtf.gtf => mygtf.unique_gene_id.gtf).
+
+2) (Optional) Run merge_stringtie_names.py if you also pass --egap_gtf (NCBI Eukaryotic Genome Annotation Pipeline gtf)
+
+If you provide --egap_gtf /path/to/reference.gtf, the pipeline automatically downloads and runs the two‐pass merge_stringtie_names.py script.
+That script further refines your GTF by comparing it to a reference (the “EGAP GTF”), ensuring consistent naming of transcripts and unifying gene_id vs. gene_name across transcripts and exons.
+The final result is a new file (by default named transcripts_named.gtf), which can then be used in the main pipeline steps.
+
+#### If you just want to unique‐ify your gene IDs:
+```
+amyg --preprocessing -a /path/to/mygtf.gtf
+```
+
+#### If you also want to merge your GTF with an EGAP reference for consistent naming:
+```
+amyg --preprocessing \
+  -a /path/to/mygtf.gtf \
+  --egap_gtf /path/to/egap_reference.gtf
+```
+---
 ## Interested in genome-wide duplications? please run with ```--dups``` flag
 
 ### 1) Docker Mode
