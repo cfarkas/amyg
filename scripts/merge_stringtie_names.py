@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 """
-merge_stringtie_names_2pass.py
+merge_stringtie_names.py
 
 Implements a pipeline to:
  1) Filter both GTFs by 'transcript_id' 
@@ -46,7 +46,19 @@ def parse_args():
                    help="Prefix for gffcompare (-o prefix -p prefix). Default=gffcmp_out")
     p.add_argument("--output_annotated", default="annotated_with_renamed.gtf",
                    help="Final annotated GTF after 2-pass gene_id unify. Default=annotated_with_renamed.gtf")
-    return p.parse_args()
+
+    ########################################################################
+    # (NEW) Additional argument recognized: --output_gtf => sets output_annotated
+    ########################################################################
+    p.add_argument("--output_gtf", help="Alias for --output_annotated. Use e.g. --output_gtf transcripts_named.gtf")
+
+    args = p.parse_args()
+
+    # If user passes --output_gtf, override args.output_annotated:
+    if args.output_gtf:
+        args.output_annotated = args.output_gtf
+
+    return args
 
 def run_cmd(cmd_list, msg=""):
     print(f"[INFO] {msg} Running:\n   {' '.join(cmd_list)}\n")
