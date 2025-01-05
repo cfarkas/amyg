@@ -65,9 +65,9 @@ def read_gtf(file_name):
     strand = pd.CategoricalDtype({"+", "-", "."})
     frame = pd.CategoricalDtype({0, 1, 2, "."})
     attributes = np.dtype("O")
-    comments = "string"
-    gtf_column_names = ["seqname", "source", "feature", "start", "end", "score", "strand", "frame", "attributes"]#, "comments"]
-    gtf_dtypes = [seqname, source, features, start, end, score, strand, frame, attributes]#, comments]
+    # comments = "string"  # not used below
+    gtf_column_names = ["seqname", "source", "feature", "start", "end", "score", "strand", "frame", "attributes"]
+    gtf_dtypes = [seqname, source, features, start, end, score, strand, frame, attributes]
     return pd.read_csv(file_name, sep="\t", comment="#", names=gtf_column_names, dtype={k:v for k, v in zip(gtf_column_names, gtf_dtypes)})
 
 
@@ -77,7 +77,7 @@ def convert_attributes_to_dict(df):
     Note that this operates in place, meaning that the input DataFrame is changed.
 
     """
-    for index, value in tqdm(df["attributes"].iteritems(), total=len(df), dynamic_ncols=True):
+    for index, value in tqdm(df["attributes"].items(), total=len(df), dynamic_ncols=True):
         if not isinstance(value, str):
             continue
         attributes = {  # Start with required defaults; likely overwritten below
@@ -133,7 +133,7 @@ def convert_attributes_to_string(df):
     Note that this operates in place, meaning that the input DataFrame is changed.
 
     """
-    for index, value in tqdm(df["attributes"].iteritems(), total=len(df), dynamic_ncols=True):
+    for index, value in tqdm(df["attributes"].items(), total=len(df), dynamic_ncols=True):
         if not isinstance(value, dict):
             continue
         df.at[index, "attributes"] = "; ".join(f"{k} {v}" for k, v in value.items())
