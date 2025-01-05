@@ -146,12 +146,12 @@ If you have the NCBI Eukaryotic Genome Annotation Pipeline gtf of your genome an
 That script further refines your GTF by comparing it to the reference (the “EGAP GTF”), ensuring consistent naming of transcripts and unifying gene_id vs. gene_name across transcripts and exons.
 The final result is a new file (by default named ```transcripts_named.gtf```), which can then be used in the main amyg pipeline.
 
-#### 1. If you just want to unique‐ify your gene IDs:
+#### 1) If you just want to unique‐ify your gene IDs:
 ```
 amyg --preprocessing -a /path/to/mygtf.gtf
 ```
 
-#### 2. If you also want to merge your GTF with an EGAP reference for consistent naming:
+#### 2) If you also want to merge your GTF with an EGAP reference for consistent naming:
 ```
 amyg --preprocessing \
   -a /path/to/mygtf.gtf \
