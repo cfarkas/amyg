@@ -133,16 +133,16 @@ amyg \
 ---
 ## Preprocessing your stringtie.gtf using ```--preprocessing``` flag
 
-Sometimes you need to clean or prepare your GTF file before running the main annotation pipeline. The --preprocessing flag lets you do just that. Here's what it does in detail:
+Sometimes you need to clean or prepare your GTF file before running the main annotation pipeline. The ```--preprocessing``` flag lets you do just that. Here's what it does in detail:
 
-1) Run unique_gene_id.py
+1) **Run ```unique_gene_id.py```**
 
 This script ensures all gene_id fields in your GTF are truly unique. For any conflicting gene_ids (e.g., multiple transcripts with the same gene_name), it automatically appends a suffix to avoid collisions.
 The output is a new GTF (e.g., mygtf.gtf => mygtf.unique_gene_id.gtf).
 
-2) (Optional) Run merge_stringtie_names.py if you also pass --egap_gtf (NCBI Eukaryotic Genome Annotation Pipeline gtf)
+2) **(Optional) Run ```merge_stringtie_names.py``` if you also pass ```--egap_gtf``` (NCBI Eukaryotic Genome Annotation Pipeline gtf)**
 
-If you provide --egap_gtf /path/to/reference.gtf, the pipeline automatically downloads and runs the two‐pass merge_stringtie_names.py script.
+If you provide --egap_gtf /path/to/reference.gtf, the pipeline automatically downloads and runs the ```merge_stringtie_names.py``` script.
 That script further refines your GTF by comparing it to a reference (the “EGAP GTF”), ensuring consistent naming of transcripts and unifying gene_id vs. gene_name across transcripts and exons.
 The final result is a new file (by default named transcripts_named.gtf), which can then be used in the main pipeline steps.
 
