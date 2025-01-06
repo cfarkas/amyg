@@ -46,8 +46,8 @@ def parse_args():
                    help="Path to the NCBI EGAP GFF (Gnomon-based).")
     p.add_argument("--prefix", default="gffcmp_out",
                    help="Prefix for gffcompare (-o prefix -p prefix). Default=gffcmp_out")
-    p.add_argument("--output_annotated", default="annotated_with_renamed.gtf",
-                   help="Final annotated GTF after 2-pass gene_id unify. Default=annotated_with_renamed.gtf")
+    p.add_argument("--output_annotated", default="annotated_and_renamed.gtf",
+                   help="Final annotated GTF after 2-pass gene_id unify. Default=annotated_and_renamed.gtf")
 
     # (Optional) if you want a secondary alias:
     p.add_argument("--output_gtf",
