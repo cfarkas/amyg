@@ -12,7 +12,7 @@ Implements a pipeline to:
  6) TWO-PASS approach to unify gene_id across transcripts/exons:
     - Pass 1: parse *transcript lines* => transcript_id -> final_gene_id 
         * If gene_name != '.' => final_gene_id = gene_name
-        * Else final_gene_id = that transcript line's gene_id
+        * Else final_gene_id = that line's gene_id
     - Pass 2: rewrite *every line* (transcript + exon + other features),
         * If it has a transcript_id in our map, unify (overwrite) gene_id with final_gene_id
         * Otherwise leave it as-is
@@ -24,7 +24,7 @@ Usage:
     --stringtie_gtf /path/to/stringtie.gtf \
     --egap_gff /path/to/reference.gff \
     --prefix gffcmp_out \
-    --output_annotated unified_annotated.gtf
+    --output_annotated annotated_and_renamed.gtf
 
 Dependencies:
   - Python >=3
@@ -36,7 +36,6 @@ import os
 import sys
 import glob
 import subprocess
-
 
 def parse_args():
     p = argparse.ArgumentParser(description="Two-pass unify gene_id in annotated GTF from gffcompare.")
@@ -305,5 +304,105 @@ def main():
     print("Intermediate files in =>", out_dir)
 
 
+
+########################################################################
+#                 EXTENSION: Remove "gene-" and "rna-" prefixes        #
+########################################################################
+
+def remove_prefixes_in_final_gtf(final_gtf_path):
+    """
+    At the end of the pipeline, check for attributes:
+      * ref_gene_id "gene-..."
+      * gene_id "gene-..."
+      * cmp_ref "rna-..."
+      * transcript_id "rna-..."
+    and remove those prefixes if found. If not present, do nothing.
+    """
+    # We'll parse line by line, modify attributes, and overwrite.
+    temp_file = final_gtf_path + ".noprefix"
+    changed = 0
+    total = 0
+
+    def parse_attr(attr_str):
+        # same parse logic as above
+        d = {}
+        attr_str = attr_str.strip().strip(";")
+        for item in attr_str.split(";"):
+            item = item.strip()
+            if not item:
+                continue
+            parts = item.split(" ", 1)
+            if len(parts) == 2:
+                k = parts[0]
+                v = parts[1].strip().strip('"')
+                d[k] = v
+        return d
+
+    def build_attr(d):
+        pairs = []
+        for k, v in d.items():
+            pairs.append(f'{k} "{v}"')
+        return "; ".join(pairs) + ";"
+
+    with open(final_gtf_path, "r") as fin, open(temp_file, "w") as fout:
+        for line in fin:
+            if line.startswith("#"):
+                fout.write(line)
+                continue
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) < 9:
+                fout.write(line)
+                continue
+
+            attr_d = parse_attr(parts[8])
+
+            # remove 'gene-' prefix from gene_id, ref_gene_id if present
+            if "gene_id" in attr_d:
+                old_gene = attr_d["gene_id"]
+                if old_gene.startswith("gene-"):
+                    attr_d["gene_id"] = old_gene.replace("gene-", "", 1)
+                    changed += 1
+
+            if "ref_gene_id" in attr_d:
+                old_ref_gene = attr_d["ref_gene_id"]
+                if old_ref_gene.startswith("gene-"):
+                    attr_d["ref_gene_id"] = old_ref_gene.replace("gene-", "", 1)
+                    changed += 1
+
+            # remove 'rna-' prefix from transcript_id, cmp_ref if present
+            if "transcript_id" in attr_d:
+                old_tx = attr_d["transcript_id"]
+                if old_tx.startswith("rna-"):
+                    attr_d["transcript_id"] = old_tx.replace("rna-", "", 1)
+                    changed += 1
+
+            if "cmp_ref" in attr_d:
+                old_cmp = attr_d["cmp_ref"]
+                if old_cmp.startswith("rna-"):
+                    attr_d["cmp_ref"] = old_cmp.replace("rna-", "", 1)
+                    changed += 1
+
+            parts[8] = build_attr(attr_d)
+            fout.write("\t".join(parts) + "\n")
+            total += 1
+
+    os.replace(temp_file, final_gtf_path)
+    print(f"[INFO] remove_prefixes_in_final_gtf: Removed prefixes in {changed} out of {total} lines.\n")
+
+
+# After the main pipeline runs, we'll parse the final GTF path again:
 if __name__ == "__main__":
-    main()
+    # Hacky re-parse to retrieve final GTF path
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--output_annotated", default="annotated_and_renamed.gtf")
+    parser.add_argument("--output_gtf", help="Alias for --output_annotated.")
+    known, unknown = parser.parse_known_args()
+
+    final_path = known.output_annotated
+    if known.output_gtf:
+        final_path = known.output_gtf
+
+    if os.path.exists(final_path):
+        remove_prefixes_in_final_gtf(final_path)
+    else:
+        print(f"[WARN] Could not find final GTF {final_path} to strip prefixes.\n")
