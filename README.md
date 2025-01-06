@@ -155,7 +155,7 @@ amyg --preprocessing -a /path/to/mygtf.gtf
 ```
 amyg --preprocessing \
   -a /path/to/mygtf.gtf \
-  --egap_gtf /path/to/egap_reference.gtf
+  --egap_gtf /path/to/egap_reference.gff
 ```
 ```transcripts_named.gtf``` will be produced, that can be input for amyg pipeline
 
