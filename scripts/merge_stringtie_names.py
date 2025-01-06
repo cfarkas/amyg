@@ -392,20 +392,112 @@ def remove_prefixes_in_final_gtf(final_gtf_path):
     print(f"[INFO] remove_prefixes_in_final_gtf: Stripped prefixes in {changed} out of {total} lines.\n")
 
 
-# We'll re-call parse_args() to find the final output if user modifies it:
+#######################################################
+#       Replace transcript_id if cmp_ref present      #
+#######################################################
+
+def rename_transcript_id_by_cmp_ref(final_gtf_path):
+    """
+    If any line has 'cmp_ref "<someRef>"' on a *transcript* feature,
+    we map transcript_id => that cmp_ref.
+    Then rewrite *all lines* with that transcript_id to have transcript_id = cmp_ref.
+    If no cmp_ref lines exist, we skip.
+
+    Example:
+      If we see a transcript line with transcript_id "STRG.6919.2" and cmp_ref "XM_052979331.1",
+      we rename "STRG.6919.2" -> "XM_052979331.1" for all lines that share that transcript_id.
+    """
+    # 1) parse once to find transcript_id->cmp_ref
+    tid_to_cmp = {}
+    with open(final_gtf_path, "r") as f:
+        for line in f:
+            if line.startswith("#"):
+                continue
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) < 9:
+                continue
+
+            feature = parts[2]  # e.g. 'transcript'
+            attr_str = parts[8]
+            attr_d = parse_attr_local(attr_str)
+
+            if feature == "transcript" and "cmp_ref" in attr_d and "transcript_id" in attr_d:
+                # store the mapping
+                cmp_val = attr_d["cmp_ref"]
+                tid_val = attr_d["transcript_id"]
+                tid_to_cmp[tid_val] = cmp_val
+
+    if not tid_to_cmp:
+        print("[INFO] rename_transcript_id_by_cmp_ref: No transcript lines with cmp_ref found, skipping.\n")
+        return
+
+    print(f"[INFO] Found {len(tid_to_cmp)} transcript(s) with cmp_ref => rewriting transcript_id.\n")
+
+    # 2) rewrite the entire GTF, replace transcript_id if in tid_to_cmp
+    tmp_file = final_gtf_path + ".cmp_ref_renamed"
+    changed = 0
+    total = 0
+
+    with open(final_gtf_path, "r") as fin, open(tmp_file, "w") as fout:
+        for line in fin:
+            if line.startswith("#"):
+                fout.write(line)
+                continue
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) < 9:
+                fout.write(line)
+                continue
+
+            attr_d = parse_attr_local(parts[8])
+            old_tid = attr_d.get("transcript_id", None)
+            if old_tid and old_tid in tid_to_cmp:
+                new_tid = tid_to_cmp[old_tid]
+                if new_tid != old_tid:
+                    attr_d["transcript_id"] = new_tid
+                    changed += 1
+
+            parts[8] = build_attr_local(attr_d)
+            fout.write("\t".join(parts) + "\n")
+            total += 1
+
+    os.replace(tmp_file, final_gtf_path)
+    print(f"[INFO] rename_transcript_id_by_cmp_ref: Rewrote transcript_id in {changed} out of {total} lines.\n")
+
+
+# We finalize everything by hooking into the second parse:
 if __name__ == "__main__":
-    # We've already called main() above. Now let's do prefix removal on the final GTF.
-    # Re-parse minimal args to get --output_annotated or default
+    # We do the same hacky approach to re-parse final GTF name after main() is done
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--output_annotated", default="annotated_and_renamed.gtf")
     parser.add_argument("--output_gtf", help="Alias for --output_annotated.")
-    known, unknown = parser.parse_known_args()
+    known_args, unknown = parser.parse_known_args()
 
-    final_gtf = known.output_annotated
-    if known.output_gtf:
-        final_gtf = known.output_gtf
+    final_gtf = known_args.output_annotated
+    if known_args.output_gtf:
+        final_gtf = known_args.output_gtf
 
     if os.path.exists(final_gtf):
+        # 1) remove prefixes
         remove_prefixes_in_final_gtf(final_gtf)
+
+        # 2) rename transcript_id if cmp_ref is found
+        rename_transcript_id_by_cmp_ref(final_gtf)
     else:
-        print(f"[WARN] Could not find final GTF {final_gtf} to strip prefixes.\n")
+        print(f"[WARN] Could not find final GTF {final_gtf} to strip prefixes or rename transcript_id.\n")
+
+def parse_attr_local(a_str):
+    """
+    Helper re-declared for rename_transcript_id_by_cmp_ref to parse attributes.
+    (If needed. But we already declared above. We can unify. 
+     Keeping it minimal here is consistent with the instructions.)
+    """
+    pass
+
+
+def build_attr_local(d):
+    """
+    Helper re-declared for rename_transcript_id_by_cmp_ref to build attributes.
+    (If needed. But we already declared above. 
+     We'll just keep the same logic in that function.)
+    """
+    pass
