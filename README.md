@@ -38,7 +38,7 @@ optional arguments:
   -a A                  StringTie GTF
   -g G                  Reference genome (in fasta format)
   --preprocessing       Preprocess GTF using unique_gene_id.py. If --egap_gtf is also provided, then also run merge_stringtie_names.py.
-  --egap_gtf EGAP_GTF   EGAP GTF for merging (only used if --preprocessing is true).
+  --egap_gtf EGAP_GFF   EGAP GFF for merging (only used if --preprocessing is true).
 ```
 
 **amyg** is the next version of [annotate_my_genomes](https://github.com/cfarkas/annotate_my_genomes) but streamlines the installation and there is no need for separate config files. 
