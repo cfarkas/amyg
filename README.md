@@ -140,10 +140,10 @@ Sometimes you need to clean or prepare your GTF file before running the main ann
 This script ensures all gene_id fields in your GTF are truly unique. For any conflicting gene_ids (e.g., multiple transcripts with the same gene_name), it automatically appends a suffix to avoid collisions.
 The output is a new GTF (e.g., ```mygtf.gtf``` => ```mygtf.unique_gene_id.gtf```).
 
-2) **(Optional, but recommended) Run ```merge_stringtie_names.py``` with ```--egap_gtf``` (NCBI Eukaryotic Genome Annotation Pipeline gtf)**
+2) **(Optional, but recommended) Run ```merge_stringtie_names.py``` with ```--egap_gff``` (NCBI Eukaryotic Genome Annotation Pipeline gff)**
 
-If you have the NCBI Eukaryotic Genome Annotation Pipeline gtf of your genome and provide --egap_gtf ```/path/to/egap_reference.gtf```, the pipeline automatically downloads and runs the ```merge_stringtie_names.py``` script.
-That script further refines your GTF by comparing it to the reference (the “EGAP GTF”), ensuring consistent naming of transcripts and unifying gene_id vs. gene_name across transcripts and exons.
+If you have the NCBI Eukaryotic Genome Annotation Pipeline gff of your genome and provide --egap_gff ```/path/to/genome.gff```, the pipeline automatically downloads and runs the ```merge_stringtie_names.py``` script.
+That script further refines your GTF by comparing it to the reference (the “EGAP GFF”), ensuring consistent naming of transcripts and unifying gene_id vs. gene_name across transcripts and exons.
 The final result is a new file (by default named ```annotated_and_renamed.gtf```), which can then be used in the main amyg pipeline.
 
 #### 1) If you just want to unique‐ify your gene IDs:
