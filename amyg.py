@@ -438,11 +438,11 @@ def main():
     parser.add_argument("-g", help="Reference genome (in fasta format)")
 
     ############################################################################
-    # (NEW LINES) EXTENSIONS FOR --preprocessing + optional --egap_gtf
+    # (NEW LINES) EXTENSIONS FOR --preprocessing + optional --egap_gff
     ############################################################################
     parser.add_argument("--preprocessing", action="store_true",
-                        help="Preprocess GTF using unique_gene_id.py. If --egap_gtf is also provided, then also run merge_stringtie_names.py.")
-    parser.add_argument("--egap_gtf", help="EGAP GTF for merging (only used if --preprocessing is true).")
+                        help="Preprocess GTF using unique_gene_id.py. If --egap_gff is also provided, then also run merge_stringtie_names.py.")
+    parser.add_argument("--egap_gff", help="EGAP GFF for merging (only used if --preprocessing is true).")
 
     args = parser.parse_args()
 
@@ -483,9 +483,9 @@ def main():
                 logger.error("Could not find the expected *.unique_gene_id.gtf after running unique_gene_id.py. Exiting.")
                 sys.exit(1)
 
-        if args.egap_gtf:
+        if args.egap_gff:
             # Step 2: download & run merge_stringtie_names.py
-            egap_path = os.path.abspath(args.egap_gtf)
+            egap_path = os.path.abspath(args.egap_gff)
             log_green_info("=== Preprocessing: Downloading merge_stringtie_names.py ===")
             run_cmd("wget https://raw.githubusercontent.com/cfarkas/amyg/refs/heads/main/scripts/merge_stringtie_names.py")
             run_cmd("chmod 755 merge_stringtie_names.py")
@@ -493,7 +493,7 @@ def main():
             cmd_merge = (
                 f"python merge_stringtie_names.py "
                 f"--stringtie_gtf {unique_gtf} "
-                f"--egap_gtf {egap_path} "
+                f"--egap_gff {egap_path} "
                 f"--output_gtf {out_gtf}"
             )
             log_green_info(f"Running: {cmd_merge}")
