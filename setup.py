@@ -3,7 +3,7 @@ import setuptools
 
 setuptools.setup(
     name="amyg",
-    version="0.1.3",             # adjust as needed
+    version="0.1.4",             # adjust as needed
     author="Carlos Farkas",
     author_email="carlosfarkas@gmail.com",
     description="A pipeline for De Novo Genomic Annotation of Non-Model Organisms",
