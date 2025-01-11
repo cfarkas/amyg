@@ -17,14 +17,15 @@ Implements a pipeline to:
         * If it has a transcript_id in our map, unify (overwrite) gene_id with final_gene_id
         * Otherwise leave it as-is
 
-This ensures exons *and transcripts* share a consistent gene_id from the final annotation.
+Finally, we reorder the attributes in the final GTF so that
+**gene_id** appears first, **transcript_id** second, and then the rest.
 
 Usage:
   python merge_stringtie_names.py \
     --stringtie_gtf /path/to/stringtie.gtf \
     --egap_gff /path/to/reference.gff \
     --prefix gffcmp_out \
-    --output_annotated annotated_and_renamed.gtf
+    --output_gtf transcripts_named.gtf
 
 Dependencies:
   - Python >=3
@@ -39,7 +40,7 @@ import subprocess
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Two-pass unify gene_id in annotated GTF from gffcompare.")
+    p = argparse.ArgumentParser(description="Two-pass unify gene_id in annotated GTF from gffcompare, then reorder attributes.")
     p.add_argument("--stringtie_gtf", required=True,
                    help="Path to the StringTie GTF (e.g. output from StringTie).")
     p.add_argument("--egap_gff", required=True,
@@ -169,20 +170,31 @@ def parse_attr(attr_str):
 
 
 def build_attr(d):
+    """
+    Build an attribute string from dict `d`.
+    * Reorder so gene_id is first, transcript_id is second, then everything else.
+    """
     items = []
+
+    # If gene_id present, put it first
+    if "gene_id" in d:
+        items.append(f'gene_id "{d["gene_id"]}"')
+    # If transcript_id present, put it second
+    if "transcript_id" in d:
+        items.append(f'transcript_id "{d["transcript_id"]}"')
+
+    # Then the rest
     for k, v in d.items():
-        items.append(f'{k} "{v}"')
+        if k not in ["gene_id", "transcript_id"]:
+            items.append(f'{k} "{v}"')
     return "; ".join(items) + ";"
 
 
 def pass1_build_transcript_map(in_gtf):
     """
-    Pass 1: read all lines, specifically 'transcript' lines,
-    build transcript_id -> final_gene_id, where final_gene_id
-    = gene_name if gene_name != '.', else = that line's gene_id.
-
-    We'll unify *all* lines that share this transcript_id in Pass 2,
-    including transcripts themselves and exons/CDS that mention this transcript_id.
+    Pass 1: read all lines with feature='transcript'.
+    transcript_id -> final_gene_id
+       final_gene_id = gene_name if gene_name != '.', else gene_id
     """
     tmap = {}
     with open(in_gtf) as f:
@@ -193,13 +205,11 @@ def pass1_build_transcript_map(in_gtf):
             if len(parts) < 9:
                 continue
             feature = parts[2]
-            # We only look at "transcript" lines to define the finalGene
             if feature == "transcript":
                 attr_d = parse_attr(parts[8])
                 if "transcript_id" not in attr_d:
                     continue
                 tid = attr_d["transcript_id"]
-                # finalGene = gene_name if present, else gene_id
                 if "gene_name" in attr_d and attr_d["gene_name"] != ".":
                     finalGene = attr_d["gene_name"]
                 else:
@@ -210,12 +220,10 @@ def pass1_build_transcript_map(in_gtf):
 
 def pass2_rewrite_unify(in_gtf, out_gtf, transcript_map):
     """
-    Pass 2: rewrite *every line* in the annotated GTF,
-    unifying gene_id for both transcripts *and* exons (and any other feature)
-    that has a transcript_id in transcript_map.
+    Pass 2: rewrite every line in the annotated GTF,
+    unify gene_id for lines that have a transcript_id in transcript_map.
 
-    We do *not* remove or skip lines. If a line's transcript_id isn't in the map,
-    we leave it unchanged.
+    Then build attributes with build_attr(...) to put gene_id first, then transcript_id, etc.
     """
     changed = 0
     total = 0
@@ -233,7 +241,6 @@ def pass2_rewrite_unify(in_gtf, out_gtf, transcript_map):
             attr_d = parse_attr(parts[8])
             tid = attr_d.get("transcript_id", None)
 
-            # If this line has a known transcript_id, unify gene_id
             if tid and (tid in transcript_map):
                 newGene = transcript_map[tid]
                 oldGene = attr_d.get("gene_id", None)
@@ -248,102 +255,15 @@ def pass2_rewrite_unify(in_gtf, out_gtf, transcript_map):
     print(f"[INFO] pass2_rewrite_unify: Overwrote gene_id in {changed} out of {total} lines total.\n")
 
 
-def main():
-    args = parse_args()
-
-    # 1) Resolve final annotated output path
-    out_annot = os.path.abspath(args.output_annotated)
-    out_dir = os.path.dirname(out_annot)
-    if not os.path.isdir(out_dir):
-        print(f"[ERROR] Output directory {out_dir} does not exist!")
-        sys.exit(1)
-
-    # 2) Filter input GTF + GFF to lines that have transcript_id
-    sty_filter = os.path.join(out_dir, "stringtie_filter.gtf")
-    eg_filter  = os.path.join(out_dir, "egap_filter.gtf")
-
-    print("[INFO] Filtering input files to lines that contain 'transcript_id'...\n")
-    filter_gtf(args.stringtie_gtf, sty_filter, "StringTie")
-    filter_gtf(args.egap_gff,      eg_filter,  "EGAP GFF")
-
-    # 3) Check for missing gene_id
-    print("[INFO] Checking gene_id+transcript_id presence...\n")
-    check_for_missing_gene_id(sty_filter, "StringTie (filtered)")
-    check_for_missing_gene_id(eg_filter,  "EGAP (filtered)")
-
-    # 4) Use gffread fix => produce sty_fixed, eg_fixed
-    #    Gnomon-based GFF might be incomplete => we use -F
-    sty_fixed = os.path.join(out_dir, "stringtie_fixed.gtf")
-    eg_fixed  = os.path.join(out_dir, "egap_fixed.gtf")
-    gffread_fix(sty_filter, sty_fixed, "StringTie")
-    gffread_fix(eg_filter,  eg_fixed,  "EGAP GFF")
-
-    # 5) run gffcompare => produce prefix*.annotated.gtf
-    print(f"[INFO] Running gffcompare => prefix={args.prefix}\n")
-    run_gffcompare(sty_fixed, eg_fixed, args.prefix)
-
-    # 6) find the annotated gtf
-    ann_pattern = args.prefix + "*.annotated.gtf"
-    ann_matches = glob.glob(ann_pattern)
-    if len(ann_matches) == 1:
-        annotated_gtf = ann_matches[0]
-        print(f"[INFO] Found annotated GTF => {annotated_gtf}\n")
-    else:
-        print(f"[ERROR] Did not uniquely find annotated GTF among => {ann_matches}")
-        sys.exit(1)
-
-    # 7) Two-pass unify gene_id
-    print("[INFO] Pass 1: building transcript->finalGene map from annotated GTF (transcript lines).")
-    tmap = pass1_build_transcript_map(annotated_gtf)
-    print(f"[INFO] Found transcript_id -> finalGene for {len(tmap)} transcripts.\n")
-
-    print("[INFO] Pass 2: rewriting entire annotated GTF => unify gene_id for transcripts, exons, etc.\n")
-    pass2_rewrite_unify(annotated_gtf, out_annot, tmap)
-
-    print("[INFO] Done.\n")
-    print(f"Final => {out_annot}")
-    print("Intermediate files in =>", out_dir)
-
-
-if __name__ == "__main__":
-    main()
-
-
-########################################################################
-#                          ADDITIONAL STEP                             #
-########################################################################
-
 def remove_prefixes_in_final_gtf(final_gtf_path):
     """
-    Additional final step:
-    Scan the final GTF and remove any:
-      - "gene-" prefix from gene_id and ref_gene_id
-      - "rna-" prefix from transcript_id and cmp_ref
-    If these prefixes are not found, output them as is.
+    Additional final step: remove 'gene-' prefix from gene_id/ref_gene_id
+    and 'rna-' prefix from transcript_id/cmp_ref, if found.
+    Then reorder attributes again (just to be sure).
     """
     tmp_output = final_gtf_path + ".prefix_stripped"
     changed = 0
     total = 0
-
-    def parse_attr_local(a_str):
-        d = {}
-        a_str = a_str.strip().strip(";")
-        for item in a_str.split(";"):
-            item = item.strip()
-            if not item:
-                continue
-            parts = item.split(" ", 1)
-            if len(parts) == 2:
-                k = parts[0]
-                v = parts[1].strip().strip('"')
-                d[k] = v
-        return d
-
-    def build_attr_local(d):
-        pairs = []
-        for k, v in d.items():
-            pairs.append(f'{k} "{v}"')
-        return "; ".join(pairs) + ";"
 
     with open(final_gtf_path, "r") as fin, open(tmp_output, "w") as fout:
         for line in fin:
@@ -356,7 +276,7 @@ def remove_prefixes_in_final_gtf(final_gtf_path):
                 fout.write(line)
                 continue
 
-            attr_d = parse_attr_local(parts[8])
+            attr_d = parse_attr(parts[8])
 
             # remove 'gene-' prefix from gene_id and ref_gene_id
             if "gene_id" in attr_d:
@@ -384,7 +304,8 @@ def remove_prefixes_in_final_gtf(final_gtf_path):
                     attr_d["cmp_ref"] = old_cmp.replace("rna-", "", 1)
                     changed += 1
 
-            parts[8] = build_attr_local(attr_d)
+            # re-build attributes w/ gene_id first, transcript_id second
+            parts[8] = build_attr(attr_d)
             fout.write("\t".join(parts) + "\n")
             total += 1
 
@@ -394,40 +315,11 @@ def remove_prefixes_in_final_gtf(final_gtf_path):
 
 def rename_transcript_id_by_cmp_ref(final_gtf_path):
     """
-    If any line has 'cmp_ref "<someRef>"' on a *transcript* feature,
-    we map transcript_id => that cmp_ref.
-    Then rewrite *all lines* with that transcript_id to have transcript_id = cmp_ref.
-
-    If no cmp_ref lines exist, skip.
-
-    Example:
-      If we see:
-        transcript_id "STRG.6919.2"; cmp_ref "XM_052979331.1"
-      we rename "STRG.6919.2" => "XM_052979331.1" for all lines with that transcript_id.
+    If a line has 'cmp_ref "<someRef>"' on a transcript, we rename transcript_id => that <someRef>.
+    Then apply that rename to all lines with that transcript_id.
+    After that, reorder attributes again (just to keep consistent).
     """
-
-    # Provide local versions of parse/build to avoid referencing missing functions
-    def parse_attr_local(a_str):
-        d = {}
-        a_str = a_str.strip().strip(";")
-        for item in a_str.split(";"):
-            item = item.strip()
-            if not item:
-                continue
-            parts = item.split(" ", 1)
-            if len(parts) == 2:
-                k = parts[0]
-                v = parts[1].strip().strip('"')
-                d[k] = v
-        return d
-
-    def build_attr_local(d):
-        pairs = []
-        for k, v in d.items():
-            pairs.append(f'{k} "{v}"')
-        return "; ".join(pairs) + ";"
-
-    # 1) parse once to find (transcript_id -> cmp_ref)
+    # 1) parse to find transcript feature with transcript_id + cmp_ref => map oldTID -> newTID
     tid_to_cmp = {}
     with open(final_gtf_path, "r") as f:
         for line in f:
@@ -436,21 +328,19 @@ def rename_transcript_id_by_cmp_ref(final_gtf_path):
             parts = line.rstrip("\n").split("\t")
             if len(parts) < 9:
                 continue
-            feature = parts[2]
-            attr_str = parts[8]
-            attrs = parse_attr_local(attr_str)
-            if feature == "transcript" and "cmp_ref" in attrs and "transcript_id" in attrs:
-                old_tid = attrs["transcript_id"]
-                new_tid = attrs["cmp_ref"]
-                tid_to_cmp[old_tid] = new_tid
+            if parts[2] == "transcript":
+                attr_d = parse_attr(parts[8])
+                if "transcript_id" in attr_d and "cmp_ref" in attr_d:
+                    old_tid = attr_d["transcript_id"]
+                    new_tid = attr_d["cmp_ref"]
+                    if new_tid and (new_tid != old_tid):
+                        tid_to_cmp[old_tid] = new_tid
 
     if not tid_to_cmp:
-        print("[INFO] rename_transcript_id_by_cmp_ref: No transcript lines with cmp_ref found, skipping.\n")
+        print("[INFO] rename_transcript_id_by_cmp_ref: no transcripts with cmp_ref found, skipping.\n")
         return
 
-    print(f"[INFO] Found {len(tid_to_cmp)} transcript(s) with cmp_ref => rewriting transcript_id.\n")
-
-    # 2) rewrite entire GTF to rename transcript_id
+    # 2) rewrite entire GTF => rename transcript_id
     tmp_out = final_gtf_path + ".cmp_ref_renamed"
     changed = 0
     total = 0
@@ -463,15 +353,15 @@ def rename_transcript_id_by_cmp_ref(final_gtf_path):
             if len(parts) < 9:
                 fout.write(line)
                 continue
-            attrs = parse_attr_local(parts[8])
-            old_tid = attrs.get("transcript_id", None)
+            attr_d = parse_attr(parts[8])
+            old_tid = attr_d.get("transcript_id", None)
             if old_tid and old_tid in tid_to_cmp:
                 new_tid = tid_to_cmp[old_tid]
-                if new_tid != old_tid:
-                    attrs["transcript_id"] = new_tid
-                    changed += 1
+                attr_d["transcript_id"] = new_tid
+                changed += 1
 
-            parts[8] = build_attr_local(attrs)
+            # reorder
+            parts[8] = build_attr(attr_d)
             fout.write("\t".join(parts) + "\n")
             total += 1
 
@@ -479,22 +369,67 @@ def rename_transcript_id_by_cmp_ref(final_gtf_path):
     print(f"[INFO] rename_transcript_id_by_cmp_ref: Rewrote transcript_id in {changed} out of {total} lines.\n")
 
 
-# Re-parse final GTF after the main logic, applying the new steps:
-if __name__ == "__main__":
-    # Already invoked main() above, now do post-processing
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--output_annotated", default="annotated_and_renamed.gtf")
-    parser.add_argument("--output_gtf", help="Alias for --output_annotated.")
-    known_args, unknown = parser.parse_known_args()
+def main():
+    args = parse_args()
 
-    final_gtf = known_args.output_annotated
-    if known_args.output_gtf:
-        final_gtf = known_args.output_gtf
+    # 1) Resolve final annotated output path
+    out_annot = os.path.abspath(args.output_annotated)
+    out_dir = os.path.dirname(out_annot)
+    if not os.path.isdir(out_dir):
+        print(f"[ERROR] Output directory {out_dir} does not exist!")
+        sys.exit(1)
 
-    if os.path.exists(final_gtf):
-        # 1) remove any "gene-", "rna-" prefixes if present
-        remove_prefixes_in_final_gtf(final_gtf)
-        # 2) rename transcript_id if a transcript line has 'cmp_ref'
-        rename_transcript_id_by_cmp_ref(final_gtf)
+    # 2) Filter input GTF + GFF to lines that have transcript_id
+    sty_filter = os.path.join(out_dir, "stringtie_filter.gtf")
+    eg_filter  = os.path.join(out_dir, "egap_filter.gtf")
+
+    print("[INFO] Filtering input files to lines that contain 'transcript_id'...\n")
+    filter_gtf(args.stringtie_gtf, sty_filter, "StringTie")
+    filter_gtf(args.egap_gff,      eg_filter,  "EGAP GFF")
+
+    # 3) Check for missing gene_id
+    print("[INFO] Checking gene_id+transcript_id presence...\n")
+    check_for_missing_gene_id(sty_filter, "StringTie (filtered)")
+    check_for_missing_gene_id(eg_filter,  "EGAP (filtered)")
+
+    # 4) Use gffread fix => produce sty_fixed, eg_fixed
+    sty_fixed = os.path.join(out_dir, "stringtie_fixed.gtf")
+    eg_fixed  = os.path.join(out_dir, "egap_fixed.gtf")
+    gffread_fix(sty_filter, sty_fixed, "StringTie")
+    gffread_fix(eg_filter,  eg_fixed,  "EGAP GFF")
+
+    # 5) run gffcompare => produce prefix*.annotated.gtf
+    print(f"[INFO] Running gffcompare => prefix={args.prefix}\n")
+    run_gffcompare(sty_fixed, eg_fixed, args.prefix)
+
+    # 6) find the annotated gtf
+    ann_pattern = args.prefix + "*.annotated.gtf"
+    ann_matches = glob.glob(ann_pattern)
+    if len(ann_matches) == 1:
+        annotated_gtf = ann_matches[0]
+        print(f"[INFO] Found annotated GTF => {annotated_gtf}\n")
     else:
-        print(f"[WARN] Could not find final GTF {final_gtf} to strip prefixes or rename transcript_id.\n")
+        print(f"[ERROR] Did not uniquely find annotated GTF among => {ann_matches}")
+        sys.exit(1)
+
+    # 7) Two-pass unify gene_id
+    print("[INFO] Pass 1: building transcript->finalGene map from annotated GTF (transcript lines).")
+    tmap = pass1_build_transcript_map(annotated_gtf)
+    print(f"[INFO] Found transcript_id -> finalGene for {len(tmap)} transcripts.\n")
+
+    print("[INFO] Pass 2: rewriting entire annotated GTF => unify gene_id...\n")
+    pass2_rewrite_unify(annotated_gtf, out_annot, tmap)
+
+    print(f"[INFO] Done pass2 => {out_annot}.\n")
+
+    # 8) Additional final steps:
+    #    8a) remove prefixes
+    remove_prefixes_in_final_gtf(out_annot)
+    #    8b) rename transcript_id by cmp_ref (if found)
+    rename_transcript_id_by_cmp_ref(out_annot)
+
+    print("[INFO] Final attribute reordering done. See final file =>", out_annot)
+
+
+if __name__ == "__main__":
+    main()
