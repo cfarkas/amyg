@@ -157,7 +157,7 @@ amyg --preprocessing \
   -a /path/to/mygtf.gtf \
   --egap_gff /path/to/genomic.gff
 ```
-```transcripts_named.gtf``` will be produced, that can be input for amyg pipeline. You can pass for -a ```mygtf.unique_gene_id.gtf``` from the previous step.
+```transcripts_named.gtf``` will be produced, that can be input for amyg pipeline. You can pass for -a ```mygtf.unique_gene_id.gtf``` from the previous step as well.
 
 ---
 ## Interested in genome-wide duplications? please run with ```--dups``` flag
