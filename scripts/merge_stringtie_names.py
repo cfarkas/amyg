@@ -12,13 +12,14 @@ Implements a pipeline to:
  6) TWO-PASS approach to unify gene_id across transcripts/exons:
     - Pass 1: parse *transcript lines* => transcript_id -> final_gene_id 
         * If gene_name != '.' => final_gene_id = gene_name
+        * Else if cmp_ref_gene != '.' => final_gene_id = cmp_ref_gene
         * Else final_gene_id = that line's gene_id
     - Pass 2: rewrite *every line* (transcript + exon + other features),
         * If it has a transcript_id in our map, unify (overwrite) gene_id with final_gene_id
         * Otherwise leave it as-is
 
 Finally, we reorder the attributes in the final GTF so that
-**gene_id** appears first, **transcript_id** second, and then the rest.
+**gene_id** appears first, **transcript_id** second, then everything else.
 
 Usage:
   python merge_stringtie_names.py \
@@ -194,7 +195,9 @@ def pass1_build_transcript_map(in_gtf):
     """
     Pass 1: read all lines with feature='transcript'.
     transcript_id -> final_gene_id
-       final_gene_id = gene_name if gene_name != '.', else gene_id
+       If gene_name != '.' => final_gene_id = gene_name
+       Else if cmp_ref_gene != '.' => final_gene_id = cmp_ref_gene
+       Else => final_gene_id = gene_id
     """
     tmap = {}
     with open(in_gtf) as f:
@@ -210,10 +213,17 @@ def pass1_build_transcript_map(in_gtf):
                 if "transcript_id" not in attr_d:
                     continue
                 tid = attr_d["transcript_id"]
+
+                # 1) if gene_name present (and not '.'), use it
                 if "gene_name" in attr_d and attr_d["gene_name"] != ".":
                     finalGene = attr_d["gene_name"]
+                # 2) else if cmp_ref_gene present (and not '.'), use that
+                elif "cmp_ref_gene" in attr_d and attr_d["cmp_ref_gene"] != ".":
+                    finalGene = attr_d["cmp_ref_gene"]
+                # 3) else fallback to gene_id
                 else:
                     finalGene = attr_d.get("gene_id", "?")
+
                 tmap[tid] = finalGene
     return tmap
 
