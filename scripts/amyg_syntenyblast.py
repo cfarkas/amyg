@@ -169,14 +169,11 @@ def load_and_process_blast_data(blast_file, out_csv):
     return df
 
 def parse_seq_id(seq_id):
+    """Extract (contig_name, start, end) from 'contigName_start_end' pattern."""
     match = re.match(r'(.+?)_(\d+)_(\d+)', seq_id)
     if match:
-        # return contig_name, start, end
-        return (match.group(1), int(match.group(2)), int(match.group(3)))
-    else:
-        # If no match, return three placeholders:
-        # (orig_seq_id, None, None)
-        return (seq_id, None, None)
+        return match.group(1), int(match.group(2)), int(match.group(3))
+    return seq_id, None, None
 
 def process_synteny_blocks(df):
     """
