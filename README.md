@@ -142,7 +142,7 @@ The output is a new GTF (e.g., ```mygtf.gtf``` => ```mygtf.unique_gene_id.gtf```
 
 2) **(Optional, but recommended) Run ```merge_stringtie_names.py``` with ```--egap_gff``` (NCBI Eukaryotic Genome Annotation Pipeline gff)**
 
-If you have the NCBI Eukaryotic Genome Annotation Pipeline gff of your genome and provide --egap_gff ```/path/to/genome.gff```, the pipeline automatically downloads and runs the ```merge_stringtie_names.py``` script.
+If you have the NCBI Eukaryotic Genome Annotation Pipeline gff of your genome and provide --egap_gff ```/path/to/genome.gff```, the pipeline automatically also downloads and runs the ```merge_stringtie_names.py``` script.
 That script further refines your GTF by comparing it to the reference (the “EGAP GFF”), ensuring consistent naming of transcripts and unifying gene_id vs. gene_name across transcripts and exons.
 The final result is a new file (by default named ```annotated_and_renamed.gtf```), which can then be used in the main amyg pipeline.
 
@@ -151,13 +151,13 @@ The final result is a new file (by default named ```annotated_and_renamed.gtf```
 amyg --preprocessing -a /path/to/mygtf.gtf
 ```
 
-#### 2) If you also want to merge your GTF with an EGAP reference for consistent naming:
+#### 2) If you want to unique‐ify and also want to merge your GTF with an EGAP reference for consistent naming
 ```
 amyg --preprocessing \
   -a /path/to/mygtf.gtf \
   --egap_gff /path/to/genomic.gff
 ```
-```transcripts_named.gtf``` will be produced, that can be input for amyg pipeline. You can pass for -a ```mygtf.unique_gene_id.gtf``` from the previous step as well.
+```transcripts_named.gtf``` will be produced, that can be input for amyg pipeline.
 
 ---
 ## Interested in genome-wide duplications? please run with ```--dups``` flag
