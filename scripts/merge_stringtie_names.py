@@ -379,6 +379,77 @@ def rename_transcript_id_by_cmp_ref(final_gtf_path):
     print(f"[INFO] rename_transcript_id_by_cmp_ref: Rewrote transcript_id in {changed} out of {total} lines.\n")
 
 
+########################
+#  ADDED FUNCTION HERE #
+########################
+def add_missing_genes_from_egap(final_gtf, egap_fixed):
+    """
+    Checks which gene_ids appear in egap_fixed.gtf but not in final_gtf.
+    For any gene_id that is missing, appends all lines from egap_fixed
+    with that gene_id. Returns the path to an updated GTF file that includes
+    the missing lines, plus prints how many unique gene_ids were appended.
+    """
+    if not os.path.isfile(final_gtf) or not os.path.isfile(egap_fixed):
+        print("[WARN] add_missing_genes_from_egap: one of the input files is missing!")
+        return final_gtf  # do nothing
+
+    # parse gene_ids from final_gtf
+    existing_gene_ids = set()
+    with open(final_gtf, "r") as f_in:
+        for line in f_in:
+            if line.startswith("#"):
+                continue
+            parts = line.strip().split("\t")
+            if len(parts) < 9:
+                continue
+            attr_d = parse_attr(parts[8])
+            gid = attr_d.get("gene_id", None)
+            if gid:
+                existing_gene_ids.add(gid)
+
+    # parse gene_ids from egap_fixed
+    # store lines by gene_id
+    egap_map = {}
+    with open(egap_fixed, "r") as f_in:
+        for line in f_in:
+            if line.startswith("#"):
+                continue
+            parts = line.strip().split("\t")
+            if len(parts) < 9:
+                continue
+            attr_d = parse_attr(parts[8])
+            gid = attr_d.get("gene_id", None)
+            if gid:
+                if gid not in egap_map:
+                    egap_map[gid] = []
+                egap_map[gid].append(line)
+
+    # find missing gene_ids
+    missing_gene_ids = set(egap_map.keys()) - existing_gene_ids
+
+    if not missing_gene_ids:
+        print("[INFO] No missing gene_ids found from EGAP => nothing appended.")
+        return final_gtf
+
+    # append them to a new file
+    out_temp = final_gtf + ".with_egap_missing"
+    appended_count = 0
+    with open(final_gtf, "r") as oldf, open(out_temp, "w") as newf:
+        # first copy old lines
+        for line in oldf:
+            newf.write(line)
+        # now append missing lines
+        for mgid in sorted(missing_gene_ids):
+            for ln in egap_map[mgid]:
+                newf.write(ln)
+            appended_count += 1
+
+    os.replace(out_temp, final_gtf)
+
+    print(f"[INFO] add_missing_genes_from_egap: appended lines for {len(missing_gene_ids)} missing gene_ids.")
+    return final_gtf
+
+
 def main():
     args = parse_args()
 
@@ -437,6 +508,10 @@ def main():
     remove_prefixes_in_final_gtf(out_annot)
     #    8b) rename transcript_id by cmp_ref (if found)
     rename_transcript_id_by_cmp_ref(out_annot)
+
+    # 9) Finally, add missing genes from the EGAP file
+    #    and see how many new gene_ids are appended:
+    add_missing_genes_from_egap(out_annot, eg_fixed)
 
     print("[INFO] Final attribute reordering done. See final file =>", out_annot)
 
