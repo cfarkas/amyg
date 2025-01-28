@@ -21,6 +21,10 @@ Implements a pipeline to:
 Finally, we reorder the attributes in the final GTF so that
 **gene_id** appears first, **transcript_id** second, then everything else.
 
+Additionally:
+ 7) Add missing genes from EGAP only if their bounding-box overlap
+    with existing genes is <= 50%.
+
 Usage:
   python merge_stringtie_names.py \
     --stringtie_gtf /path/to/stringtie.gtf \
@@ -379,36 +383,116 @@ def rename_transcript_id_by_cmp_ref(final_gtf_path):
     print(f"[INFO] rename_transcript_id_by_cmp_ref: Rewrote transcript_id in {changed} out of {total} lines.\n")
 
 
-########################
-#  ADDED FUNCTION HERE #
-########################
-def add_missing_genes_from_egap(final_gtf, egap_fixed):
-    """
-    Checks which gene_ids appear in egap_fixed.gtf but not in final_gtf.
-    For any gene_id that is missing, appends all lines from egap_fixed
-    with that gene_id. Returns the path to an updated GTF file that includes
-    the missing lines, plus prints how many unique gene_ids were appended.
-    """
-    if not os.path.isfile(final_gtf) or not os.path.isfile(egap_fixed):
-        print("[WARN] add_missing_genes_from_egap: one of the input files is missing!")
-        return final_gtf  # do nothing
+########################################
+# Overlap Checking and Adding New Genes #
+########################################
 
-    # parse gene_ids from final_gtf
-    existing_gene_ids = set()
-    with open(final_gtf, "r") as f_in:
-        for line in f_in:
+def _compute_gene_bounding_boxes(gtf_path):
+    """
+    Compute bounding-box coords for each gene in `gtf_path`.
+    Return a dict: gene_id -> list of (chr, strand, start, end)
+      We store possibly multiple intervals if the GTF has multiple gene lines 
+      or complex structure, but often it's just one bounding box per gene.
+      However, to keep it simple, we'll unify them into a single min->max
+      for each gene_id.
+
+    Note: If the file has no 'gene' feature lines, we fallback by deriving
+    bounding boxes from all lines that share the same gene_id.
+    """
+    from collections import defaultdict
+
+    gene_boxes = {}   # gene_id -> (chr, strand, min_start, max_end)
+    stored_chr_strand = {}
+
+    with open(gtf_path, "r") as fin:
+        for line in fin:
             if line.startswith("#"):
                 continue
             parts = line.strip().split("\t")
             if len(parts) < 9:
                 continue
-            attr_d = parse_attr(parts[8])
-            gid = attr_d.get("gene_id", None)
-            if gid:
-                existing_gene_ids.add(gid)
 
-    # parse gene_ids from egap_fixed
-    # store lines by gene_id
+            chrom, source, feature, start, end, score, strand, frame, attr_str = parts
+            start = int(start)
+            end = int(end)
+
+            attr_d = parse_attr(attr_str)
+            gid = attr_d.get("gene_id", None)
+            if not gid:
+                continue
+
+            if gid not in gene_boxes:
+                gene_boxes[gid] = (chrom, strand, start, end)
+                stored_chr_strand[gid] = (chrom, strand)
+            else:
+                # update bounding box
+                (c_chrom, c_strand, c_start, c_end) = gene_boxes[gid]
+                # If there's a mismatch in chr/strand, it might be an annotation quirk,
+                # but typically should not happen. We'll assume they're the same.
+                # Just unify min_start, max_end
+                gene_boxes[gid] = (
+                    c_chrom,
+                    c_strand,
+                    min(c_start, start),
+                    max(c_end, end),
+                )
+    return gene_boxes
+
+
+def _compute_overlap_fraction(boxA, boxB):
+    """
+    Given two bounding boxes (chrA, strandA, startA, endA) and
+    (chrB, strandB, startB, endB), compute how much they overlap.
+    Return fraction_of_overlap relative to the smaller region.
+
+    If they are on different chromosomes or different strands,
+    overlap is 0.
+
+    Overlap fraction = overlap_len / min(lenA, lenB).
+    """
+    chrA, strandA, startA, endA = boxA
+    chrB, strandB, startB, endB = boxB
+
+    if (chrA != chrB) or (strandA != strandB):
+        return 0.0
+
+    overlap_start = max(startA, startB)
+    overlap_end = min(endA, endB)
+    if overlap_end < overlap_start:
+        return 0.0  # no overlap
+    overlap_len = overlap_end - overlap_start + 1
+
+    lenA = endA - startA + 1
+    lenB = endB - startB + 1
+    smaller_len = min(lenA, lenB)
+
+    return overlap_len / float(smaller_len)
+
+
+def add_missing_genes_from_egap(final_gtf, egap_fixed, max_overlap=0.5):
+    """
+    Checks which gene_ids appear in egap_fixed.gtf but not in final_gtf.
+    For any missing gene_id, we check that it does NOT overlap > max_overlap
+    fraction with any existing gene. If overlap <= max_overlap, we append.
+
+    Reports how many missing genes were excluded due to overlap > max_overlap
+    and how many were appended. Returns the path to an updated GTF file
+    that includes the missing lines.
+    """
+    if not os.path.isfile(final_gtf) or not os.path.isfile(egap_fixed):
+        print("[WARN] add_missing_genes_from_egap: one of the input files is missing!")
+        return final_gtf  # do nothing
+
+    # Build bounding boxes for existing gene_ids in final_gtf
+    existing_boxes = _compute_gene_bounding_boxes(final_gtf)
+
+    # parse gene_ids from final_gtf
+    existing_gene_ids = set(existing_boxes.keys())
+
+    # Build bounding boxes for EGAP
+    egap_boxes = _compute_gene_bounding_boxes(egap_fixed)
+
+    # parse all lines from egap_fixed, store them by gene_id
     egap_map = {}
     with open(egap_fixed, "r") as f_in:
         for line in f_in:
@@ -420,33 +504,64 @@ def add_missing_genes_from_egap(final_gtf, egap_fixed):
             attr_d = parse_attr(parts[8])
             gid = attr_d.get("gene_id", None)
             if gid:
-                if gid not in egap_map:
-                    egap_map[gid] = []
-                egap_map[gid].append(line)
+                egap_map.setdefault(gid, []).append(line)
 
     # find missing gene_ids
     missing_gene_ids = set(egap_map.keys()) - existing_gene_ids
-
     if not missing_gene_ids:
         print("[INFO] No missing gene_ids found from EGAP => nothing appended.")
         return final_gtf
 
-    # append them to a new file
+    excluded_for_no_box = 0
+    excluded_for_overlap = 0
+    approved_missing = []
+
+    # Filter out any that overlap > max_overlap fraction with existing boxes
+    for mgid in missing_gene_ids:
+        if mgid not in egap_boxes:
+            # no bounding box found => skip
+            excluded_for_no_box += 1
+            continue
+
+        box_new = egap_boxes[mgid]
+        # check overlap with all existing genes
+        overlaps_too_much = False
+        for ex_gid, ex_box in existing_boxes.items():
+            frac = _compute_overlap_fraction(box_new, ex_box)
+            if frac > max_overlap:
+                overlaps_too_much = True
+                break
+
+        if overlaps_too_much:
+            excluded_for_overlap += 1
+        else:
+            approved_missing.append(mgid)
+
+    if not approved_missing:
+        print("[INFO] All missing gene_ids overlapped more than "
+              f"{max_overlap*100:.0f}% => none appended.")
+        print(f"[INFO] Total missing = {len(missing_gene_ids)}, "
+              f"excluded_for_no_box = {excluded_for_no_box}, "
+              f"excluded_for_overlap = {excluded_for_overlap}")
+        return final_gtf
+
+    # Actually append the approved_missing genes
     out_temp = final_gtf + ".with_egap_missing"
-    appended_count = 0
     with open(final_gtf, "r") as oldf, open(out_temp, "w") as newf:
-        # first copy old lines
+        # copy old lines
         for line in oldf:
             newf.write(line)
-        # now append missing lines
-        for mgid in sorted(missing_gene_ids):
+        # append missing lines for approved genes
+        for mgid in sorted(approved_missing):
             for ln in egap_map[mgid]:
                 newf.write(ln)
-            appended_count += 1
 
     os.replace(out_temp, final_gtf)
 
-    print(f"[INFO] add_missing_genes_from_egap: appended lines for {len(missing_gene_ids)} missing gene_ids.")
+    print(f"[INFO] add_missing_genes_from_egap: appended lines for {len(approved_missing)} new gene_ids "
+          f"(out of {len(missing_gene_ids)} missing).")
+    print(f"[INFO]   - excluded_for_no_box = {excluded_for_no_box}")
+    print(f"[INFO]   - excluded_for_overlap (> {max_overlap*100:.0f}%) = {excluded_for_overlap}")
     return final_gtf
 
 
@@ -509,11 +624,11 @@ def main():
     #    8b) rename transcript_id by cmp_ref (if found)
     rename_transcript_id_by_cmp_ref(out_annot)
 
-    # 9) Finally, add missing genes from the EGAP file
-    #    and see how many new gene_ids are appended:
-    add_missing_genes_from_egap(out_annot, eg_fixed)
+    # 9) Finally, add missing genes from the EGAP file,
+    #    only if overlap <= 50% (set by max_overlap=0.5).
+    add_missing_genes_from_egap(out_annot, eg_fixed, max_overlap=0.5)
 
-    print("[INFO] Final attribute reordering done. See final file =>", out_annot)
+    print("[INFO] Final attribute reordering + missing gene addition done. See final file =>", out_annot)
 
 
 if __name__ == "__main__":
