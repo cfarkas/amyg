@@ -954,7 +954,7 @@ def run_single_cell_mode(args):
 ###############################################################################
 def main():
     parser = argparse.ArgumentParser(
-        description="annotation pipeline with optional single_cell or coverage-based preprocessing."
+        description="A genome annotation pipeline supporting both standard and single-cell RNA-seq. It performs coverage-based parameter tuning, reference-guided assembly, functional annotation (via SwissProt), and optional gene duplication analysis"
     )
     parser.add_argument("--install", choices=["conda", "docker"], help="Install environment and exit.")
     parser.add_argument("--use_conda", action="store_true", help="Use conda env.")
