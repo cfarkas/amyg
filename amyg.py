@@ -704,257 +704,203 @@ def run_preprocessing_tuning(args):
     return
 
 
-
 ###############################################################################
 # SINGLE-CELL LOGIC
 ###############################################################################
-def run_stringtie_single_cell(bamfile, out_gtf, ref_gtf, threads):
-    cmd=[
-        "stringtie",
-        "-p", str(threads),
-        "-G", os.path.abspath(ref_gtf),
-        "-c","2","-s","8","-f","0.05","-j","3","-m","300","-v",
-        "-o", out_gtf,
-        os.path.abspath(bamfile)
-    ]
-    logger.info(f"[SINGLE_CELL] => {' '.join(cmd)}")
-    try:
-        subprocess.run(cmd, check=True)
-        return True
-    except subprocess.CalledProcessError:
-        logger.warning(f"[SINGLE_CELL] StringTie failed => skip {bamfile}")
-        return False
-
-def parse_attrs(a_str):
-    d={}
-    for chunk in a_str.split(';'):
-        chunk=chunk.strip()
-        if not chunk: 
-            continue
-        parts=chunk.split(' ',1)
-        if len(parts)<2:
-            continue
-        k,v=parts
-        v=v.strip().strip('"')
-        d[k]=v
-    return d
-
-def interval_overlap_len(ranges, st, en):
-    ov=0
-    for (s,e) in ranges:
-        if e<st:
-            continue
-        if s>en:
-            break
-        ovs=max(s,st)
-        ove=min(e,en)
-        if ove>=ovs:
-            ov+=(ove-ovs+1)
-    return ov
-
-def merge_intervals(ivals):
-    ivals.sort(key=lambda x:x[0])
-    merged=[]
-    cs,ce=ivals[0]
-    for (s,e) in ivals[1:]:
-        if s<=ce+1:
-            ce=max(ce,e)
-        else:
-            merged.append((cs,ce))
-            cs,ce=s,e
-    merged.append((cs,ce))
-    return merged
-
-def load_ref_intervals_for_sc(ref_gtf):
-    ref_gtf_abs=os.path.abspath(ref_gtf)
-    known={}
-    with open(ref_gtf_abs) as rf:
-        for line in rf:
-            if line.startswith('#'):
-                continue
-            f=line.strip().split('\t')
-            if len(f)<5: 
-                continue
-            c=f[0]
-            st=int(f[3])
-            en=int(f[4])
-            if c not in known:
-                known[c]=[]
-            known[c].append((st,en))
-    for c in known:
-        known[c]=merge_intervals(known[c])
-    return known
-
-def parse_and_filter_strg(in_gtf, ref_intervals, overlap_thr, library_prefix, merged_lines, exon_info):
-    trans_keep={}
-    with open(in_gtf) as fin:
-        for line in fin:
-            if line.startswith('#') or not line.strip():
-                continue
-            f=line.rstrip().split('\t')
-            if len(f)<9:
-                continue
-            chrom,start,end,feat=f[0],int(f[3]),int(f[4]),f[2]
-            attr=parse_attrs(f[8])
-            gene_id=attr.get("gene_id","")
-            if not gene_id.startswith("STRG."):
-                continue
-            tid=attr.get("transcript_id","")
-            if feat=="transcript":
-                length=end-start+1
-                if length<=0:
-                    continue
-                overlap=0
-                if chrom in ref_intervals:
-                    overlap=interval_overlap_len(ref_intervals[chrom],start,end)
-                frac=overlap/length
-                keep=(frac<=overlap_thr)
-                trans_keep[tid]=keep
-                exon_info[tid]={"exons":0,"library":library_prefix}
-            elif feat=="exon":
-                if tid in trans_keep and trans_keep[tid]:
-                    exon_info[tid]["exons"]+=1
-    keep_count=0
-    all_lines=[]
-    with open(in_gtf) as fin:
-        for l in fin:
-            if l.strip() and not l.startswith('#'):
-                all_lines.append(l.rstrip('\n'))
-    for line in all_lines:
-        f=line.split('\t')
-        if len(f)<9:
-            continue
-        attr=parse_attrs(f[8])
-        gene_id=attr.get("gene_id","")
-        tid=attr.get("transcript_id","")
-        if gene_id.startswith("STRG.") and tid in trans_keep:
-            if trans_keep[tid]:
-                merged_lines.append(line+'\n')
-                keep_count+=1
-    return keep_count
-
-def parse_final_annot_sc(final_gtf, exon_info, outdir):
-    transcript_map={}
-    with open(final_gtf) as fin:
-        for line in fin:
-            if line.startswith('#') or not line.strip():
-                continue
-            f=line.rstrip().split('\t')
-            if len(f)<9:
-                continue
-            attr=parse_attrs(f[8])
-            tid=attr.get("transcript_id","")
-            if tid not in transcript_map:
-                transcript_map[tid]={"blastx_hit":"no_hits","gawn_name":"no_hits"}
-            if "blastx_hit" in attr:
-                transcript_map[tid]["blastx_hit"]=attr["blastx_hit"]
-            if "gawn_name" in attr:
-                transcript_map[tid]["gawn_name"]=attr["gawn_name"]
-    csv_path=os.path.join(outdir,"final_report.csv")
-    with open(csv_path,"w") as rep:
-        rep.write("transcript_id,library_id,exon_count,blastx_hit,gawn_name\n")
-        for tid,data in exon_info.items():
-            ex_count=data["exons"]
-            lib_id=data["library"]
-            b=transcript_map.get(tid,{}).get("blastx_hit","no_hits")
-            g=transcript_map.get(tid,{}).get("gawn_name","no_hits")
-            rep.write(f"{tid},{lib_id},{ex_count},{b},{g}\n")
-
-    multi_gtf=os.path.join(outdir,"multiexon_only.gtf")
-    lines=[]
-    with open(final_gtf) as fin:
-        for l in fin:
-            if l.strip() and not l.startswith('#'):
-                lines.append(l.rstrip('\n'))
-    multi=[]
-    for ln in lines:
-        f=ln.split('\t')
-        if len(f)<9:
-            continue
-        attr=parse_attrs(f[8])
-        tid=attr.get("transcript_id","")
-        if tid in exon_info:
-            if exon_info[tid]["exons"]>1:
-                multi.append(ln)
-    with open(multi_gtf,"w") as mout:
-        mout.write("# multi-exon only transcripts\n")
-        for line in multi:
-            mout.write(line+'\n')
 
 def run_single_cell_mode(args):
-    date_str=datetime.datetime.now().strftime("%Y%m%d")
-    outdir=os.path.join(args.output, f"amyg_singlecell_{date_str}")
+    """
+    Single-cell pipeline that:
+      1) Copies .bam + ref GTF/FA => outdir.
+      2) For each .bam => run StringTie => produce GTF.
+      3) Merge all => all_merged.gtf (stringtie --merge).
+      4) unique_gene_id.py + merge_stringtie_names.py => final named GTF.
+      5) Filter novel => transcripts_truly_novel.gtf.
+      6) Update args.a => that novel GTF, args.g => local reference FA, args.output => single-cell folder.
+      7) Return so the normal pipeline can continue inline with valid -a, -g, -o.
+    """
+
+    import datetime
+    import os
+    import sys
+    import shutil
+    import glob
+
+    logger.info("[SINGLE_CELL] Starting single-cell pipeline...")
+
+    date_str = datetime.datetime.now().strftime("%Y%m%d")
+    outdir = os.path.join(args.output, f"amyg_singlecell_{date_str}")
     os.makedirs(outdir, exist_ok=True)
 
+    # Basic checks
     if not args.input_dir or not args.ref_gtf or not args.ref_fa:
-        print("[ERROR] single_cell mode => requires --input_dir, --ref_gtf, --ref_fa", file=sys.stderr)
+        logger.error("[SINGLE_CELL] => requires --input_dir, --ref_gtf, --ref_fa")
         sys.exit(1)
+
+    # 1) Copy reference GTF/FA => outdir
     ref_gtf_abs = os.path.abspath(args.ref_gtf)
-    ref_fa_abs  = os.path.abspath(args.ref_fa)
-    bam_list=glob.glob(os.path.join(os.path.abspath(args.input_dir),"*.bam"))
+    ref_gtf_basename = os.path.basename(ref_gtf_abs)
+    local_ref_gtf = os.path.join(outdir, ref_gtf_basename)
+    if not os.path.exists(local_ref_gtf):
+        shutil.copy(ref_gtf_abs, local_ref_gtf)
+
+    ref_fa_abs = os.path.abspath(args.ref_fa)
+    ref_fa_basename = os.path.basename(ref_fa_abs)
+    local_ref_fa = os.path.join(outdir, ref_fa_basename)
+    if not os.path.exists(local_ref_fa):
+        shutil.copy(ref_fa_abs, local_ref_fa)
+
+    # 2) Copy .bam => outdir => run StringTie => single GTF
+    bam_list = glob.glob(os.path.join(os.path.abspath(args.input_dir), "*.bam"))
     if not bam_list:
-        print("[ERROR] no .bam found => abort", file=sys.stderr)
+        logger.error("[SINGLE_CELL] => no .bam found => abort")
         sys.exit(1)
 
-    known={}
-    if os.path.isfile(ref_gtf_abs):
-        known=load_ref_intervals_for_sc(ref_gtf_abs)
+    local_bams = []
+    for bam_file in bam_list:
+        base = os.path.basename(bam_file)
+        local_bam = os.path.join(outdir, base)
+        if not os.path.exists(local_bam):
+            shutil.copy(bam_file, local_bam)
+        local_bams.append(local_bam)
 
-    merged_novel=[]
-    exon_info={}
-    for bamfile in bam_list:
-        prefix=os.path.splitext(os.path.basename(bamfile))[0]
-        out_gtf=os.path.join(outdir, f"{prefix}.stringtie.gtf")
-        ok=run_stringtie_single_cell(bamfile, out_gtf, ref_gtf_abs, args.threads)
-        if not ok:
-            continue
-        kept=parse_and_filter_strg(out_gtf, known, args.overlap_frac, prefix, merged_novel,exon_info)
-        if kept<1:
-            print(f"[WARN] no novel => skip {prefix}")
+    single_gtfs = []
+    for local_bam in local_bams:
+        bam_name = os.path.basename(local_bam)
+        out_gtf = os.path.join(outdir, bam_name + ".stringtie.gtf")
+        cmd_st = [
+            "stringtie",
+            "-p", str(args.threads),
+            "-G", ref_gtf_basename,  # local ref GTF
+            "-c","2","-s","8","-f","0.05","-j","3","-m","300","-v",
+            "-o", os.path.basename(out_gtf),
+            bam_name
+        ]
+        run_pipeline_command(" ".join(cmd_st), args.use_conda, args.use_docker, outdir)
+        if os.path.isfile(out_gtf):
+            single_gtfs.append(out_gtf)
+        else:
+            logger.warning(f"[SINGLE_CELL] Missing {out_gtf}")
 
-    if not merged_novel:
-        print("[WARN] no novel => skip final pipeline.")
+    if not single_gtfs:
+        logger.warning("[SINGLE_CELL] => no GTF => skip pipeline.")
         sys.exit(0)
 
-    all_novel=os.path.join(outdir,"all_novel.gtf")
-    with open(all_novel,"w") as an:
-        an.write("# all novel transcripts\n")
-        for l in merged_novel:
-            an.write(l)
-    print("[INFO] final pass => normal pipeline => all_novel.gtf")
-    final_merged_dir=os.path.join(outdir,"merged_final")
-    os.makedirs(final_merged_dir, exist_ok=True)
+    # 3) stringtie --merge => all_merged.gtf
+    all_merged = os.path.join(outdir, "all_merged.gtf")
+    list_file = os.path.join(outdir, "gtf_list.txt")
+    with open(list_file, "w") as lf:
+        for gtf_path in single_gtfs:
+            lf.write(os.path.basename(gtf_path) + "\n")
 
-    cmd_amyg=[
-        "python",
-        os.path.abspath(sys.argv[0]),
-        "-a", os.path.abspath(all_novel),
-        "-g", ref_fa_abs,
-        "--threads", str(args.threads),
-        "-o", os.path.abspath(final_merged_dir),
-        "--force",
-        "--use_docker"
+    merge_cmd = [
+        "stringtie", "--merge",
+        "-l", "STRG",
+        "-G", ref_gtf_basename,
+        "-o", "all_merged.gtf",
+        os.path.basename(list_file)
     ]
-    try:
-        subprocess.run(cmd_amyg, check=True)
-    except subprocess.CalledProcessError:
-        print("[WARN] final pipeline pass failed, continuing anyway")
+    run_pipeline_command(" ".join(merge_cmd), args.use_conda, args.use_docker, outdir)
 
-    final_annot=os.path.join(final_merged_dir,"final_results","final_annotated.gtf")
-    if not os.path.isfile(final_annot):
-        print("[WARN] no final_annotated.gtf => can't produce final report")
-        sys.exit(0)
-    print("[INFO] generating final_report.csv, multiexon_only.gtf => final_results")
-    parse_final_annot_sc(final_annot,exon_info, os.path.join(final_merged_dir,"final_results"))
-    print("[INFO] single_cell pipeline => done")
-    sys.exit(0)
+    if not os.path.isfile(all_merged):
+        logger.error("[SINGLE_CELL] => missing all_merged.gtf => merge failed.")
+        sys.exit(1)
+
+    # 4) unique_gene_id.py + merge_stringtie_names.py => final named GTF
+    unique_py = os.path.join(outdir, "unique_gene_id.py")
+    if not os.path.isfile(unique_py):
+        cmd_wget_uniq = (
+            "wget -O unique_gene_id.py "
+            "https://raw.githubusercontent.com/cfarkas/amyg/refs/heads/main/third_parties/unique_gene_id.py"
+        )
+        run_pipeline_command(cmd_wget_uniq, args.use_conda, args.use_docker, outdir)
+        run_pipeline_command("chmod 755 unique_gene_id.py", args.use_conda, args.use_docker, outdir)
+
+    merge_py = os.path.join(outdir, "merge_stringtie_names.py")
+    if not os.path.isfile(merge_py):
+        cmd_wget_merge = (
+            "wget https://raw.githubusercontent.com/cfarkas/amyg/refs/heads/main/scripts/merge_stringtie_names.py"
+        )
+        run_pipeline_command(cmd_wget_merge, args.use_conda, args.use_docker, outdir)
+        run_pipeline_command("chmod 755 merge_stringtie_names.py", args.use_conda, args.use_docker, outdir)
+
+    base_noext = os.path.splitext(all_merged)[0]
+    uniq_gtf   = base_noext + ".unique_gene_id.gtf"
+    cmd_uniq   = f"python {os.path.basename(unique_py)} all_merged.gtf"
+    run_pipeline_command(cmd_uniq, args.use_conda, args.use_docker, outdir)
+
+    if not os.path.isfile(uniq_gtf):
+        logger.warning("[SINGLE_CELL] => unique_gene_id => missing => skip naming.")
+        final_named = all_merged
+    else:
+        named_gtf = base_noext + "_named.gtf"
+        cmd_merge_names = (
+            f"python {os.path.basename(merge_py)} "
+            f"--stringtie_gtf {os.path.basename(uniq_gtf)} "
+            f"--egap_gff {ref_gtf_basename} "
+            f"--output_gtf {os.path.basename(named_gtf)}"
+        )
+        run_pipeline_command(cmd_merge_names, args.use_conda, args.use_docker, outdir)
+        final_named = named_gtf if os.path.isfile(named_gtf) else uniq_gtf
+
+    # 5) Filter novel => transcripts_truly_novel.gtf
+    def parse_attrs_local(a_str):
+        dd = {}
+        for chunk in a_str.split(';'):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            parts = chunk.split(' ', 1)
+            if len(parts) < 2:
+                continue
+            k, v = parts
+            v = v.strip().strip('"')
+            dd[k] = v
+        return dd
+
+    truly_novel = os.path.join(outdir, "transcripts_truly_novel.gtf")
+
+    def produce_truly_novel(gtf_in, novel_out):
+        if not os.path.isfile(gtf_in):
+            logger.warning(f"[SINGLE_CELL] produce_truly_novel => missing {gtf_in}")
+            return
+        lines_in, lines_novel = 0, 0
+        with open(gtf_in, "r") as fin, open(novel_out, "w") as fout:
+            for line in fin:
+                if line.startswith("#") or not line.strip():
+                    continue
+                fields = line.rstrip("\n").split("\t")
+                if len(fields) < 9:
+                    continue
+                attrs = parse_attrs_local(fields[8])
+                gene_id = attrs.get("gene_id", "")
+                lines_in += 1
+                if gene_id.startswith("STRG."):
+                    lines_novel += 1
+                    fout.write(line)
+        logger.info(
+            f"[SINGLE_CELL] produce_truly_novel => scanned {lines_in}, "
+            f"found {lines_novel} novel => {novel_out}"
+        )
+
+    produce_truly_novel(final_named, truly_novel)
+
+    # 6) Reassign args so the main pipeline sees -a, -g, and -o
+    logger.info("[SINGLE_CELL] => Done producing transcripts_truly_novel.gtf.")
+    args.a = truly_novel
+    args.g = local_ref_fa
+    args.output = outdir
+
+    logger.info("[SINGLE_CELL] => returning to main => normal pipeline will continue with -a, -g, -o set properly.")
+    return
+
 
 ###############################################################################
 # MAIN
 ###############################################################################
 def main():
     parser = argparse.ArgumentParser(
-        description="A genome annotation pipeline supporting both standard and single-cell RNA-seq. It performs coverage-based parameter tuning, reference-guided assembly, functional annotation (via SwissProt), and optional gene duplication analysis"
+        description="annotation pipeline with optional single_cell or coverage-based preprocessing."
     )
     parser.add_argument("--install", choices=["conda", "docker"], help="Install environment and exit.")
     parser.add_argument("--use_conda", action="store_true", help="Use conda env.")
