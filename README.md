@@ -1,10 +1,11 @@
 ![My Image](amyg.png)
-# **amyg**: A Pipeline for De Novo Genomic Annotation of Non-Model Organisms
+# **amyg**: A Pipeline for De Novo Genomic Annotation of Non-Model Organisms compatible with Single Cell RNA-seq
 
 **amyg** is a Python-based annotation pipeline that aims to annotate a de novo sequenced genomes (draft or complete) using RNA-seq evidence. Currently the pipeline:
 - Performs GTF processing from StringTie outputs  
 - Generates gene annotation using [GAWN](https://github.com/enormandeau/gawn) with SwissProt/BLAST integration  
 - Resolve transcriptome coding potential with **TransDecoder**, producing **longest ORFs**, **CDS**, and **peptide** sequences for each transcript.     
+- In single-cell mode, reconstruct GTF files from cell-type-specific bams (output of SComatic ```SplitBamCellTypes.py```), recognize novel genes and annotate.
 
 Currently, the pipeline can run through:
 1. **Conda**  (an environment called `annotate_env` will be created in your system)
