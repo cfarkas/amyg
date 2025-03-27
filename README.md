@@ -17,28 +17,37 @@ Currently, the pipeline can run through:
 amyg --help
 
 usage: amyg [-h] [--install {conda,docker}] [--use_conda] [--use_docker] [--threads THREADS] [--force] [--purge_all_envs] [--dups]
-               [--chunk_size CHUNK_SIZE] [-o OUTPUT] [-a A] [-g G] [--preprocessing] [--egap_gtf EGAP_GTF]
+            [--chunk_size CHUNK_SIZE] [-o OUTPUT] [-a A] [-g G] [--egap_gff EGAP_GFF] [--single_cell] [--input_dir INPUT_DIR] [--ref_gtf REF_GTF]
+            [--ref_fa REF_FA] [--overlap_frac OVERLAP_FRAC] [--preprocessing] [--bam BAM] [--continue]
 
-annotation pipeline that aims to annotate a de novo sequenced genome using RNA-seq plus optional synteny BLAST for duplicates.
+annotation pipeline with optional single_cell or coverage-based preprocessing.
 
-optional arguments:
+options:
   -h, --help            show this help message and exit
   --install {conda,docker}
                         Install environment and exit.
-  --use_conda           Run commands in conda env
-  --use_docker          Run commands in docker image
-  --threads THREADS     Number of CPUs (NCPUs) for gawn_config.sh
-  --force               Overwrite database and gawn_config.sh if present
-  --purge_all_envs      Remove the conda env and docker image, then exit.
-  --dups                Enable chunk-based synteny BLAST to find duplicates (will run amyg_syntenyblast.py).
+  --use_conda           Use conda env.
+  --use_docker          Use docker image.
+  --threads THREADS
+  --force
+  --purge_all_envs
+  --dups
   --chunk_size CHUNK_SIZE
-                        Chunk size for synteny-based duplication step (only used if --dups is enabled).
   -o OUTPUT, --output OUTPUT
-                        Output directory (must exist)
-  -a A                  StringTie GTF
-  -g G                  Reference genome (in fasta format)
-  --preprocessing       Preprocess GTF using unique_gene_id.py. If --egap_gtf is also provided, then also run merge_stringtie_names.py.
-  --egap_gff EGAP_GFF   EGAP GFF for merging (only used if --preprocessing is true).
+                        Output directory
+  -a A                  GTF from StringTie or param tuning
+  -g G                  Reference genome (FASTA)
+  --egap_gff EGAP_GFF   EGAP GFF for merging or reference checks
+  --single_cell         If set => multi-bam single-cell logic => exit after done.
+  --input_dir INPUT_DIR
+                        Directory with .bam for single_cell
+  --ref_gtf REF_GTF     Known ref GTF for single_cell mode
+  --ref_fa REF_FA       Reference genome for single_cell final pass
+  --overlap_frac OVERLAP_FRAC
+                        Overlap fraction for single_cell mode.
+  --preprocessing       If set => coverage-based param sets => pick best => override -a.
+  --bam BAM             BAM used for coverage detection in preprocessing
+  --continue            If set, continue the pipeline after preprocessing instead of exiting.
 ```
 
 **amyg** is the next version of [annotate_my_genomes](https://github.com/cfarkas/annotate_my_genomes) but streamlines the installation and there is no need for separate config files. 
