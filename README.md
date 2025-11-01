@@ -1,27 +1,37 @@
 ![My Image](amyg.png)
-# **amyg**: A Pipeline for De Novo Genomic Annotation of Non-Model Organisms compatible with Single Cell RNA-seq
+# **amyg**: A Pipeline for De Novo Genomic Annotation of Non‑Model Organisms — with splice‑aware exon correction and single‑cell RNA‑seq support
 
-**amyg** is a Python-based annotation pipeline that aims to annotate a de novo sequenced genomes (draft or complete) using RNA-seq evidence. Currently the pipeline:
-- Performs GTF processing from StringTie outputs  
-- Generates gene annotation using [GAWN](https://github.com/enormandeau/gawn) with SwissProt/BLAST integration  
-- Resolve transcriptome coding potential with **TransDecoder**, producing **longest ORFs**, **CDS**, and **peptide** sequences for each transcript.     
-- In single-cell mode, reconstruct GTF files from cell-type-specific bams (output of SComatic ```SplitBamCellTypes.py```), recognize novel genes and annotate.
+**amyg** is a Python-based annotation pipeline to annotate de novo genomes (draft or complete) using RNA‑seq evidence. This version adds an optional **exon‑correction stage** (Portcullis + PASA or Mikado), **keeps single‑cell support**, and **removes** the previous StringTie **parameter‑tuning** loop and the **duplication plotting** steps.
 
-Currently, the pipeline can run through:
-1. **Conda**  (an environment called `annotate_env` will be created in your system)
-2. **Docker** (with an auto-built image `myorg/annotate_env:latest`)
+**Core capabilities**
+- Normalize and prepare **GTF/GFF3** (unique IDs; optional EGAP naming).
+- Optional **splice‑aware exon correction** using **Portcullis** junctions, followed by **PASA** *or* **Mikado**.
+- Generate functional annotation with **[GAWN](https://github.com/enormandeau/gawn)** (SwissProt/BLAST/DIAMOND integration).
+- Resolve coding potential with **TransDecoder** (longest ORFs, CDS, peptide sequences).
+- **Single‑cell mode**: build per‑BAM assemblies with StringTie, merge/reference‑name, harvest truly novel transcripts, and continue into the main pipeline.
 
-- See https://pypi.org/project/amyg/0.1.6/ 
+You can run **amyg** via:
+1. **Conda** (creates an environment named `annotate_env`), or
+2. **Docker** (builds an image `myorg/annotate_env:latest`).
+
+See also PyPI: https://pypi.org/project/amyg/
+
+---
 
 ## Synopsis
-```
+
+```text
 amyg --help
 
-usage: amyg [-h] [--install {conda,docker}] [--use_conda] [--use_docker] [--threads THREADS] [--force] [--purge_all_envs] [--dups]
-            [--chunk_size CHUNK_SIZE] [-o OUTPUT] [-a A] [-g G] [--egap_gff EGAP_GFF] [--single_cell] [--input_dir INPUT_DIR] [--ref_gtf REF_GTF]
-            [--ref_fa REF_FA] [--overlap_frac OVERLAP_FRAC] [--preprocessing] [--bam BAM] [--continue]
+usage: amyg [-h] [--install {conda,docker}] [--use_conda] [--use_docker]
+            [--threads THREADS] [--force] [--purge_all_envs]
+            [-o OUTPUT] [-a A] [-g G] [--egap_gff EGAP_GFF]
+            [--single_cell] [--input_dir INPUT_DIR] [--ref_gtf REF_GTF]
+            [--ref_fa REF_FA] [--overlap_frac OVERLAP_FRAC]
+            [--preprocessing]
+            [--exon_correction {none,pasa,mikado}] [--bam BAM]
 
-annotation pipeline with optional single_cell or coverage-based preprocessing.
+annotation pipeline with optional single_cell and exon-correction (Portcullis + PASA/Mikado).
 
 options:
   -h, --help            show this help message and exit
@@ -29,206 +39,212 @@ options:
                         Install environment and exit.
   --use_conda           Use conda env.
   --use_docker          Use docker image.
-  --threads THREADS
-  --force
-  --purge_all_envs
-  --dups
-  --chunk_size CHUNK_SIZE
+  --threads THREADS     Number of threads.
+  --force               Overwrite existing SwissProt DB / gawn_config in output.
+  --purge_all_envs      Remove the conda env and docker image, then exit.
   -o OUTPUT, --output OUTPUT
-                        Output directory
-  -a A                  GTF from StringTie or param tuning
-  -g G                  Reference genome (FASTA)
-  --egap_gff EGAP_GFF   EGAP GFF for merging or reference checks
-  --single_cell         If set => multi-bam single-cell logic => exit after done.
-  --input_dir INPUT_DIR
-                        Directory with .bam for single_cell
-  --ref_gtf REF_GTF     Known ref GTF for single_cell mode
-  --ref_fa REF_FA       Reference genome for single_cell final pass
+                        Output directory (absolute path required with --use_docker).
+  -a A                  Input annotation (GTF or GFF3).
+  -g G                  Reference genome (FASTA).
+  --egap_gff EGAP_GFF   EGAP GFF for naming/consistency during preprocessing.
+  --single_cell         Enable single-cell mode (per-BAM assemblies + merge).
+  --input_dir INPUT_DIR Directory containing per-cell/cluster BAMs.
+  --ref_gtf REF_GTF     Reference GTF for single-cell naming/merge.
+  --ref_fa REF_FA       Reference FASTA for single-cell final pass.
   --overlap_frac OVERLAP_FRAC
-                        Overlap fraction for single_cell mode.
-  --preprocessing       If set => coverage-based param sets => pick best => override -a.
-  --bam BAM             BAM used for coverage detection in preprocessing
-  --continue            If set, continue the pipeline after preprocessing instead of exiting.
+                        Overlap fraction for single-cell filtering (default: 0.05).
+  --preprocessing       Normalize IDs and optional EGAP naming (no StringTie tuning).
+  --exon_correction {none,pasa,mikado}
+                        Splice-aware exon correction (requires --bam and -g if not 'none').
+  --bam BAM             RNA-seq BAM for Portcullis (coordinate-sorted and indexed).
 ```
 
-**amyg** is the next version of [annotate_my_genomes](https://github.com/cfarkas/annotate_my_genomes) but streamlines the installation and there is no need for separate config files. 
+**Note:** Preprocessing now runs inline and **the pipeline continues automatically**. There is no `--continue` flag in this version.
 
 ---
 
 ## Installation
 
-Via pip: 
-```
+Install the package:
+```bash
 pip install amyg
 ```
-Then, users can decide to install all requirements via conda or docker as follows: 
+
+Then choose an execution backend:
 
 ```bash
-# 1) Install conda environment:
+# 1) Create the conda environment:
 amyg --install conda
 
-# 2) Install docker image:
+# 2) Build the docker image:
 amyg --install docker
 
-# 3) Uninstall and purge old envs (optional):
+# 3) (Optional) Purge both envs:
 amyg --purge_all_envs
 ```
-- While Conda is faster, Docker image takes ~47.8 min to build in Ubuntu 24.04.1 LTS. We aimed to create a reproducible and robust local Docker image. Apologies for the delay. 
+
+> **Conda vs Docker:** Conda is often quicker to set up; Docker offers a fully reproducible runtime. With Docker, pass an **absolute** `-o/--output` path.
 
 ---
 
-## Minimal run (no exon correction)
-Currently there are two ways to run the pipeline:
+## Typical runs
 
-### 1) Docker Mode
-```
-mkdir test_docker
+### A) Minimal run (no exon correction)
+**Conda**
+```bash
 amyg \
-  -a /path/to/my_genome.gtf \
-  -g /path/to/my_genome.fasta \
-  -o ./test_docker \
-  --threads 25 \
-  --use_docker \
-  --force
+  -a assembly.gtf \
+  -g genome.fa \
+  -o ./out_conda \
+  --threads 16 \
+  --use_conda
 ```
 
-- ```--threads 25``` sets number of cpus (NCPUs) for BLAST-based GAWN annotation.
-- The output is placed in ```./test_docker```. The main results of the pipeline will be inside i.e: ```./test_docker/amyg_20250101_150629/final_results/```
-
-### 2) Conda Mode
-```
-mkdir test_conda
+**Docker** (absolute output path)
+```bash
 amyg \
-  -a /path/to/my_genome.gtf \
-  -g /path/to/my_genome.fasta \
-  -o ./test_conda \
-  --threads 25 \
-  --use_conda \
-  --force
+  -a /data/assembly.gtf \
+  -g /data/genome.fa \
+  -o /ABSOLUTE/path/out_docker \
+  --threads 16 \
+  --use_docker
 ```
-- The output is placed in ```./test_conda```. The main results of the pipeline will be inside i.e: ```./test_conda/amyg_20250101_150629/final_results/```
 
-#### Notes:
-
-- **Ctrl+C** kills all running Docker containers, ensuring no stuck processes.
-- ```--force``` overwrites existing database/ and gawn_config.sh if they are in the output folder. We reccomend to run the pipeline fresh using this flag. 
+Outputs land in `out_*/final_results/` (see _Outputs_ below).
 
 ---
 
-## Detailed Steps
+### B) Preprocessing with EGAP naming (no exon correction)
+```bash
+amyg \
+  --preprocessing \
+  -a assembly.gtf \
+  -g genome.fa \
+  --egap_gff egap.gff3 \
+  -o ./out_preproc \
+  --use_conda
+```
+This normalizes IDs and merges StringTie naming against EGAP; the run then continues into GAWN + TransDecoder automatically.
 
-1. **Download SwissProt**  
-   - Automatically fetches `swissprot.tar.gz` from the NCBI BLAST FTP server and unpacks it into the `database/` folder.
+---
 
-2. **Create `gawn_config.sh`**  
-   - **Docker mode** sets `SWISSPROT_DB` to `/data/database/swissprot`.  
-   - **Conda mode** copies SwissProt into `gawn/03_data` and sets `SWISSPROT_DB` to `03_data/swissprot`.
+### C) Exon correction: **Portcullis + Mikado** (recommended when you have RNA‑seq BAM)
+```bash
+amyg \
+  --preprocessing \
+  --exon_correction mikado \
+  --bam rnaseq.sorted.bam \
+  -a assembly.gtf \
+  -g genome.fa \
+  --egap_gff egap.gff3 \
+  --threads 16 \
+  -o ./out_mikado \
+  --use_conda
+```
+What happens: Portcullis computes high‑confidence junctions; Mikado selects corrected models, which then feed into GAWN + TransDecoder.
 
-3. **Run GAWN**  
-   - BLAST progress is monitored every 60 seconds, logging how many lines appear in `transcriptome.swissprot`.
+---
+
+### D) Exon correction: **Portcullis + PASA (SQLite)**
+```bash
+amyg \
+  --preprocessing \
+  --exon_correction pasa \
+  --bam rnaseq.sorted.bam \
+  -a assembly.gff3 \
+  -g genome.fa \
+  --egap_gff egap.gff3 \
+  --threads 16 \
+  -o ./out_pasa \
+  --use_conda
+```
+What happens: transcripts are extracted and aligned with GMAP via PASA; PASA‑refined models feed into GAWN + TransDecoder.
+
+> **Tip:** BAM must be coordinate‑sorted and indexed (`.bai`). Genome FASTA should be indexed (`samtools faidx`).
+
+---
+
+### E) Single‑cell mode (kept)
+Provide per‑cell/cluster BAMs plus reference GTF/FA; `amyg` will run StringTie per BAM, merge, name, filter **truly novel** transcripts, **then continue** into the main pipeline.
+
+```bash
+amyg \
+  --single_cell \
+  --input_dir ./cells_bam \
+  --ref_gtf ref_annotation.gtf \
+  --ref_fa  genome.fa \
+  --threads 16 \
+  -o ./out_sc \
+  --use_conda
+```
+
+The single‑cell stage writes to `out_sc/amyg_singlecell_YYYYMMDD/` and flows into GAWN + TransDecoder automatically.
+
+---
+
+## Detailed steps
+
+1. **(Optional) Preprocessing**  
+   - Normalize IDs (via `unique_gene_id.py`).  
+   - If `--egap_gff` is provided, merge StringTie naming against EGAP for consistent IDs.
+
+2. **(Optional) Exon correction**  
+   - **Portcullis** computes reliable splice junctions from `--bam`.  
+   - Choose either:  
+     - **Mikado**: configure → prepare → serialise (with junctions/ORFs) → pick best loci; or  
+     - **PASA (SQLite)**: transcript alignment & model refinement using GMAP.  
+   - Corrected models are converted to GTF and replace `-a` for downstream steps.
+
+3. **SwissProt/GAWN**  
+   - Downloads/unpacks SwissProt DB under `output/database/`, prepares `gawn_config.sh`, and runs **GAWN** (BLAST/DIAMOND).
 
 4. **TransDecoder**  
-   - Discovers **longest ORFs** and **predicts coding regions**.
+   - Finds longest ORFs and predicts coding regions.
 
 5. **Annotate GTF**  
-   - Downloads `annotate_gtf.py` and merges final hits into `final_annotated.gtf`.
-   - Outputs organized to `final_results/`, with any remaining TransDecoder files moved to `transdecoder_results/`.
+   - Integrates SwissProt hits/annotation table into **`final_annotated.gtf`**.
 
-**Organizes** final results in `final_results/` subfolder and leftover TransDecoder outputs in `transdecoder_results/`.
-
----
-## Preprocessing your stringtie.gtf using ```--preprocessing``` flag
-
-Sometimes you need to clean or prepare your GTF file before running the main annotation pipeline. The ```--preprocessing``` flag lets you do just that. Here's what it does in detail:
-
-1) **(Recommended) Run ```unique_gene_id.py```**
-
-This script ensures all gene_id fields in your GTF are truly unique. For any conflicting gene_ids (e.g., multiple transcripts with the same gene_name), it automatically appends a suffix to avoid collisions.
-The output is a new GTF (e.g., ```mygtf.gtf``` => ```mygtf.unique_gene_id.gtf```).
-
-2) **(Optional, but recommended) Run ```merge_stringtie_names.py``` with ```--egap_gff``` (NCBI Eukaryotic Genome Annotation Pipeline gff)**
-
-If you have the NCBI Eukaryotic Genome Annotation Pipeline gff of your genome and provide --egap_gff ```/path/to/genome.gff```, the pipeline automatically also downloads and runs the ```merge_stringtie_names.py``` script.
-That script further refines your GTF by comparing it to the reference (the “EGAP GFF”), ensuring consistent naming of transcripts and unifying gene_id vs. gene_name across transcripts and exons.
-The final result is a new file (by default named ```annotated_and_renamed.gtf```), which can then be used in the main amyg pipeline.
-
-#### 1) If you just want to unique‐ify your gene IDs:
-```
-amyg --preprocessing -a /path/to/mygtf.gtf
-```
-
-#### 2) If you want to unique‐ify and also want to merge your GTF with an EGAP reference for consistent naming
-```
-amyg --preprocessing \
-  -a /path/to/mygtf.gtf \
-  --egap_gff /path/to/genomic.gff
-```
-```transcripts_named.gtf``` will be produced, that can be input for amyg pipeline.
+6. **Packaging**  
+   - Assembles deliverables into `final_results/` and archives other artifacts in `transdecoder_results/` and method‑specific subfolders.
 
 ---
-## Applying amyg to single-cell data
-Additionally, to annotate de novo sequenced genomes, amyg is able to recognize and annotate novel genes from single-cell data. The input files for running amyg in single-cell mode are cell-type-specific bams (output from SComatic SplitBamCellTypes.py), with which amyg will automatically reconstruct the GTF files (using stringtie). Then, it runs the main pipeline (download SwissProt, create gawn_config.sh, run GAWN, run TransDecoder, and annotate GTF). 
-To run amyg with single-cell mode is necessary to add the flag ```--single_cell``` and the reference fasta and gtf file (```--ref_fa``` and ```--ref_gtf``` respectively).
 
-### 1) Docker Mode
-```
-mkdir test_docker_scMode
-amyg \
-  --input_dir /path/to/SplitBamCellTypes.bam \
-  -g /path/to/my_genome.fasta \
-  --single_cell \
-  --ref_fa /path/to/my_genome.fasta \
-  --ref_gtf /path/to/my_genome.gtf \
-  -o ./test_docker_scMode\
-  --threads 25 \
-  --use_docker \
-  --force
-```
-### 2) Conda Mode
-```
-mkdir test_conda_scMode
-amyg \
-  --input_dir /path/to/SplitBamCellTypes.bam \
-  -g /path/to/my_genome.fasta \
-  --single_cell \
-  --ref_fa /path/to/my_genome.fasta \
-  --ref_gtf /path/to/my_genome.gtf \
-  -o ./test_conda_scMode \
-  --threads 25 \
-  --use_conda \
-  --force 
-```
+## Outputs
 
-Similar to the option without single-cell mode, the main results of the pipeline will be in the ```final_results/``` subfolder. The output files are:
-- final_annotated-gtf
-- longest_orfs.cds
-- longest_orfs.gff3
-- longest_orfs.pep
-- transcriptome_annotation_table.tsv
-- transcriptome.hits
-- transcriptome.swissprot
-- transcripts.fa
+Inside `OUTPUT/final_results/` you will typically find:
+- `final_annotated.gtf`
+- `transcripts.fa`
+- `transcriptome.swissprot`
+- `transcriptome.hits`
+- `transcriptome_annotation_table.tsv`
+- `longest_orfs.gff3`
+- `longest_orfs.cds`
+- `longest_orfs.pep`
+
+Method‑specific folders (if used):
+- `portcullis_out/` — junction evidence
+- `mikado/` — corrected loci (`mikado.loci.gff3` + converted GTF)
+- PASA SQLite files/config/logs in the output root
 
 ---
-  
+
 ## Requirements
 
-- **Python 3.7+**  
-- **Miniconda** or **Docker** installed on your system  
-- Enough disk space for BLAST DB and GTF/FASTA inputs
+- **Python 3.9+**
+- **Miniconda** or **Docker**
+- Enough disk space for SwissProt/BLAST databases and intermediate files
 
 ---
 
-### Troubleshooting
+## Troubleshooting
 
-**Ctrl+C** in the middle of a run 
-Kills Docker containers so you don’t have to manually do it.
-
-**Permission**  
-Make sure you have write access to your output directory and local Docker permissions.
+- **Docker output path** must be absolute (`-o /ABS/path/out`).  
+- **BAM indexing**: `samtools sort -o rnaseq.sorted.bam raw.bam && samtools index rnaseq.sorted.bam`.  
+- **Interrupting runs**: Ctrl+C cleanly stops Docker containers created by the script.  
+- **Permissions**: ensure you can write to the output folder and have permission to run Docker (if used).
 
 ---
 
-### License
+## License
 
-This project is licensed under the MIT License.
+MIT License.
