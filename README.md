@@ -114,7 +114,7 @@ Outputs land in `out_*/final_results/` (see _Outputs_ below).
 
 ---
 
-### B) Preprocessing with EGAP naming (no exon correction)
+### B) Preprocessing GTF with EGAP naming (no exon correction)
 ```bash
 amyg \
   --preprocessing \
@@ -164,7 +164,7 @@ What happens: transcripts are extracted and aligned with GMAP via PASA; PASA‑r
 
 ---
 
-### E) Single‑cell mode (kept)
+### E) Single‑cell mode
 Provide per‑cell/cluster BAMs plus reference GTF/FA; `amyg` will run StringTie per BAM, merge, name, filter **truly novel** transcripts, **then continue** into the main pipeline.
 
 ```bash
