@@ -1,4 +1,16 @@
 #!/usr/bin/env python3
+# amyg.py — exon-correction edition
+# - Keeps preprocessing (-a GTF) and --egap_gff merge/naming path.
+# - Adds Portcullis + (PASA | Mikado) exon-correction options.
+# - Keeps single-cell mode.
+# - Updates conda/docker recipes to include portcullis, pasa, mikado.
+#
+# Notes:
+#   * Exon-correction is optional and controlled with:  --exon_correction {none,pasa,mikado}
+#   * Portcullis is always run when exon_correction != none (needs --bam and -g).
+#   * PASA path writes a SQLite config and runs Launch_PASA_pipeline.pl (GMAP-based).
+#   * Mikado path runs: configure → prepare → (optional) serialise → pick using Portcullis junctions.
+#   * Outputs from PASA/Mikado are converted to GTF and replace -a for downstream steps.
 
 import argparse
 import os
@@ -17,16 +29,26 @@ import datetime
 # GLOBAL SETTINGS
 ###############################################################################
 REQUIRED_TOOLS = [
+    # core IO / comparison
     "gffread",
     "gffcompare",
-    "stringtie",
-    "blastn",
-    "gmap",
     "bedtools",
     "samtools",
+    "seqkit",
+
+    # transcript assembly / evidence
+    "stringtie",                 # used in single-cell mode
+    "blastn",
+    "gmap",
+
+    # coding sequences
     "TransDecoder.LongOrfs",
     "TransDecoder.Predict",
-    "seqkit"
+
+    # exon-correction options
+    "portcullis",
+    "mikado",
+    "Launch_PASA_pipeline.pl",
 ]
 
 GREEN = "\033[92m"
@@ -103,10 +125,10 @@ def run_pipeline_command(cmd, use_conda, use_docker, output_dir):
             f"-w /data "
             f"--user {uid}:{gid} "
             f"myorg/annotate_env:latest "
-            f"bash -c \"{cmd}\""
+            f"bash -lc \"{cmd}\""
         )
     elif use_conda:
-        full_cmd = f"conda run -n annotate_env bash -c \"cd {output_dir} && {cmd}\""
+        full_cmd = f"conda run -n annotate_env bash -lc \"cd {output_dir} && {cmd}\""
     else:
         full_cmd = cmd
     run_cmd(full_cmd)
@@ -148,110 +170,78 @@ def run_gawn_with_monitor(gawn_command, file_path, use_conda, use_docker, output
         monitor.join()
 
 ###############################################################################
-# ENV FILES
+# ENV FILES (UPDATED: includes portcullis, pasa, mikado; drops plotting libs/R)
 ###############################################################################
-def environment_yml_content(use_docker=False):
-    if not use_docker:
-        return """\
+def environment_yml_content():
+    return """\
 name: annotate_env
 channels:
   - bioconda
   - conda-forge
   - defaults
 dependencies:
-  - stringtie=2.2.1
-  - gffcompare=0.11.2
-  - gffread=0.12.7
-  - blast=2.13.0
-  - gmap=2021.08.25
-  - bedtools=2.30.0
-  - samtools=1.17
-  - transdecoder=5.5.0
-  - r-base=4.1.3
-  - seqkit=2.3.1
-  - parallel
-  - procps-ng
-  - tqdm
+  # core
   - python=3.9
   - numpy
   - pandas
-  - matplotlib
-  - seaborn
   - biopython
-  - intervaltree
   - pybedtools
-"""
-    else:
-        return """\
-name: annotate_env
-channels:
-  - bioconda
-  - conda-forge
-  - defaults
-dependencies:
-  - stringtie=2.2.1
-  - gffcompare=0.11.2
-  - gffread=0.12.7
-  - blast=2.13.0
-  - gmap=2021.08.25
-  - bedtools=2.30.0
-  - samtools=1.17
-  - transdecoder=5.5.0
-  - r-base=4.1.3
-  - seqkit=2.3.1
+  - pysam
+  - pyyaml
   - parallel
   - procps-ng
   - tqdm
-  - python=3.9
-  - pybedtools
+
+  # IO / comparison
+  - gffcompare
+  - gffread
+  - bedtools
+  - samtools
+  - seqkit
+
+  # assembly/evidence
+  - stringtie
+  - blast
+  - diamond
+  - gmap
+
+  # coding sequences
+  - transdecoder
+
+  # exon-correction toolchain
+  - portcullis
+  - mikado
+  - pasa            # PASA pipeline with SQLite support
+  - sqlite
 """
 
-def dockerfile_content(use_docker=False):
-    if not use_docker:
-        return """\
+def dockerfile_content():
+    return """\
 FROM continuumio/miniconda3:4.8.2
 WORKDIR /opt
 
+# Create the environment
 COPY environment.yml /tmp/environment.yml
 RUN conda env create -f /tmp/environment.yml && conda clean -afy
 
-ENV PATH /opt/conda/envs/annotate_env/bin:$PATH
-WORKDIR /data
-"""
-    else:
-        return """\
-FROM continuumio/miniconda3:4.8.2
-WORKDIR /opt
+# Make the env default
+ENV PATH=/opt/conda/envs/annotate_env/bin:$PATH
 
-COPY environment.yml /tmp/environment.yml
+# Sanity checks
+RUN bash -lc "source activate annotate_env && which gffread && which portcullis && which mikado && which Launch_PASA_pipeline.pl"
 
-# 1) Create the conda environment
-RUN conda env create -f /tmp/environment.yml && conda clean -afy
-
-# 2) Install compilers in the environment so pip can build C/C++ packages
-RUN conda run -n annotate_env conda install -c conda-forge -c bioconda -y compilers
-
-# 3) Pip install Python data libs
-RUN conda run -n annotate_env pip install numpy pandas matplotlib seaborn biopython intervaltree
-
-# 4) Basic check
-RUN conda run -n annotate_env python -c "import numpy, pandas, matplotlib, seaborn, Bio, intervaltree; print('Python packages installed correctly.')"
-
-ENV PATH /opt/conda/envs/annotate_env/bin:$PATH
 WORKDIR /data
 """
 
-def write_environment_yml(use_docker):
-    env_content = environment_yml_content(use_docker=use_docker)
+def write_environment_yml():
     with open("environment.yml", "w") as f:
-        f.write(env_content)
-    log_green_info(f"environment.yml written (use_docker={use_docker}).")
+        f.write(environment_yml_content())
+    log_green_info("environment.yml written.")
 
-def write_dockerfile(use_docker, extra_files=None):
-    df_content = dockerfile_content(use_docker=use_docker).splitlines()
+def write_dockerfile():
     with open("Dockerfile", "w") as f:
-        f.write("\n".join(df_content) + "\n")
-    log_green_info(f"Dockerfile written (use_docker={use_docker}).")
+        f.write(dockerfile_content())
+    log_green_info("Dockerfile written.")
 
 ###############################################################################
 # Checking Tools
@@ -289,7 +279,7 @@ def rebuild_docker_with_missing_tools(missing):
     with open("environment.yml","w") as f:
         f.writelines(new_lines)
     log_green_info("Rebuilding Docker image with updated environment.yml...")
-    write_dockerfile(use_docker=True)
+    write_dockerfile()
     run_cmd("docker build . -t myorg/annotate_env:latest")
 
 def verify_tools_conda():
@@ -334,7 +324,7 @@ def verify_tools_docker():
 ###############################################################################
 def install_conda_env():
     log_green_info("Installing conda environment...")
-    write_environment_yml(use_docker=False)
+    write_environment_yml()
     run_cmd("conda env create -f environment.yml")
     verify_tools_conda()
     log_green_info("::: Installation Complete. Exiting. :::")
@@ -342,8 +332,8 @@ def install_conda_env():
 
 def install_docker_image():
     log_green_info("Installing docker image...")
-    write_environment_yml(use_docker=True)
-    write_dockerfile(use_docker=True)
+    write_environment_yml()
+    write_dockerfile()
     run_cmd("docker build . -t myorg/annotate_env:latest")
     verify_tools_docker()
     log_green_info("::: Installation Complete. Exiting. :::")
@@ -366,14 +356,14 @@ def purge_all_envs():
     sys.exit(0)
 
 ###############################################################################
-# check_inputs
+# Input handling
 ###############################################################################
 def check_inputs(args):
     """
     Ensure output_dir is absolute, create if needed.
     Copy relevant input files to that folder so local references work:
       - egap_gff
-      - a (GTF)
+      - a (GTF/GFF3)
       - g (FASTA)
       - bam
     Then reassign args.<input> to the local path.
@@ -386,7 +376,6 @@ def check_inputs(args):
     os.makedirs(outdir, exist_ok=True)
     args.output = outdir  # store updated
 
-    # If we have a known file, copy it into outdir if not existing
     if args.egap_gff and os.path.isfile(args.egap_gff):
         egap_abs = os.path.abspath(args.egap_gff)
         egap_local = os.path.join(outdir, os.path.basename(egap_abs))
@@ -416,194 +405,26 @@ def check_inputs(args):
         args.bam = bam_local
 
 ###############################################################################
-# F1 from GFFcompare
+# PREPROCESSING (kept): GTF normalization + optional name merge with EGAP GFF
 ###############################################################################
-def compute_f1_from_stats(stats_file):
-    if not os.path.isfile(stats_file):
-        logger.warning(f"compute_f1_from_stats => missing {stats_file}")
-        return 0.0
+def run_preprocessing(args):
+    """
+    Minimal preprocessing (kept):
+      * If --egap_gff not provided:
+          - run unique_gene_id.py on -a → preprocessed_best.gtf
+      * If --egap_gff provided:
+          - run unique_gene_id.py on -a
+          - merge names with merge_stringtie_names.py using --egap_gff
+          - output => preprocessed_best.gtf
+    No StringTie parameter tuning is performed anymore.
+    """
+    outdir = args.output
 
-    sensitivity = 0.0
-    precision   = 0.0
-    found = False
-    with open(stats_file) as sf:
-        for line in sf:
-            line=line.strip()
-            if line.startswith("Transcript level:"):
-                parts=line.split()
-                if len(parts) >= 5:
-                    try:
-                        sens = float(parts[2])
-                        prec = float(parts[4])
-                        sensitivity = sens
-                        precision   = prec
-                        found = True
-                        break
-                    except:
-                        pass
-
-    if not found:
-        return 0.0
-    if (sensitivity+precision)==0:
-        return 0.0
-    f1 = 2.0*(sensitivity*precision)/(sensitivity+precision)
-    logger.info(f"[F1] transcript-level => S={sensitivity:.2f}, P={precision:.2f}, F1={f1:.2f}")
-    return f1
-
-###############################################################################
-# detect_coverage for bam => average coverage
-###############################################################################
-def detect_coverage(bam, outdir, use_conda, use_docker):
-    logger.info("[PREPROCESSING] Detect coverage with samtools depth -a -d 0 ...")
-    coverage_file = "temp_coverage.txt"
-    bam_abs = os.path.abspath(bam)
-    cmd_depth = f"samtools depth -a -d 0 {bam_abs} > {coverage_file}"
-    run_pipeline_command(cmd_depth, use_conda, use_docker, outdir)
-
-    full_cov = os.path.join(outdir, coverage_file)
-    if not os.path.isfile(full_cov):
-        logger.warning("[COVERAGE] coverage file not found => return None")
-        return None
-
-    covs=[]
-    with open(full_cov) as f:
-        for line in f:
-            parts=line.strip().split()
-            if len(parts)==3:
-                try:
-                    c=float(parts[2])
-                    covs.append(c)
-                except:
-                    pass
-
-    if not covs:
-        logger.warning("[COVERAGE] no coverage lines => None")
-        return None
-
-    avg=statistics.mean(covs)
-    logger.info(f"[COVERAGE] average coverage => {avg:.2f}")
-    return avg
-
-
-###############################################################################
-# Preprocessing
-###############################################################################
-
-def run_preprocessing_tuning(args):
-    import glob
-    import os
-    import sys
-    import shutil
-    import logging
-
-    outdir = args.output  # assume already an absolute path
-
-    # We'll check if the user wants to continue after preprocessing.
-    # If not, we'll call sys.exit(0) as before. If yes, we'll just return.
-    def maybe_exit():
-        """Exit only if --continue was NOT passed."""
-        if not getattr(args, "continue", False):
-            sys.exit(0)
-        else:
-            logger.info("[PREPROCESSING] --continue specified; not exiting => returning to main.")
-
-    # --------------------------------------------------------------
-    # IF --egap_gff NOT PASSED => skip coverage-based pipeline,
-    # just run unique_gene_id.py on -a, write "preprocessed_best.gtf".
-    # --------------------------------------------------------------
-    if not getattr(args, "egap_gff", False):
-        logger.info("[PREPROCESSING] => Skipping coverage-based pipeline (no --egap_gff).")
-        if not args.a or not os.path.isfile(args.a):
-            logger.error("[PREPROCESSING] requires -a <some.gtf> when skipping coverage pipeline.")
-            sys.exit(1)
-
-        # Step 2: Download + chmod unique_gene_id.py
-        cmd_wget_uniq = (
-            "wget -O unique_gene_id.py "
-            "https://raw.githubusercontent.com/cfarkas/amyg/refs/heads/main/third_parties/unique_gene_id.py"
-        )
-        run_pipeline_command(cmd_wget_uniq, args.use_conda, args.use_docker, outdir)
-        run_pipeline_command("chmod 755 unique_gene_id.py", args.use_conda, args.use_docker, outdir)
-
-        # Run unique_gene_id.py on user-provided -a
-        a_basename = os.path.basename(args.a)
-        a_base_noext = os.path.splitext(args.a)[0]
-        out_uniq = a_base_noext + ".unique_gene_id.gtf"
-
-        cmd_uniq = f"python unique_gene_id.py {a_basename}"
-        logger.info(f"[PREPROCESSING] => {cmd_uniq}")
-        run_pipeline_command(cmd_uniq, args.use_conda, args.use_docker, outdir)
-
-        if not os.path.isfile(out_uniq):
-            logger.error(f"[PREPROCESSING] missing {out_uniq} => cannot proceed.")
-            sys.exit(1)
-
-        # Copy result to "preprocessed_best.gtf"
-        final_tuned = os.path.join(outdir, "preprocessed_best.gtf")
-        shutil.copy(out_uniq, final_tuned)
-
-        logger.info(f"[PREPROCESSING] => Overriding -a => {final_tuned}")
-        args.a = final_tuned
-
-        maybe_exit()  # exit or return, depending on --continue
-        return  # in case maybe_exit() does not exit (if --continue was set)
-
-    # --------------------------------------------------------------------
-    # ELSE => user passed --egap_gff => run the ENTIRE coverage-based code
-    # (All of your original logic remains below, with the -G fix)
-    # --------------------------------------------------------------------
-
-    if not args.bam:
-        logger.error("[PREPROCESSING] requires --bam <reads.bam>")
-        sys.exit(1)
-    if not args.egap_gff:
-        logger.error("[PREPROCESSING] requires --egap_gff <some.gff>")
+    if not args.a or not os.path.isfile(args.a):
+        logger.error("[PREPROCESSING] requires -a <some.gtf/gff3>")
         sys.exit(1)
 
-    # Step A: detect coverage
-    coverage = detect_coverage(args.bam, outdir, args.use_conda, args.use_docker)
-    if coverage is None:
-        coverage = 10.0  # fallback if coverage is undetectable
-
-    # Example coverage factors (including 0.125 now)
-    factors = [0.125, 0.25, 0.5, 1, 2, 4]
-    param_candidates = []
-    for fct in factors:
-        cval = max(1.0, coverage * fct)
-        param_candidates.append(cval)
-
-    logger.info(f"[PREPROCESSING] coverage param sets => {param_candidates}")
-    tuned_gtfs = []
-    bam_abs = os.path.abspath(args.bam)
-
-    # Step 1: run stringtie with each coverage factor
-    for cval in param_candidates:
-        lbl = f"cov{cval:.2f}"
-        out_gtf = os.path.join(outdir, f"tune_{lbl}.gtf")
-        cmd_st = (
-            f"stringtie {bam_abs} "
-            f"-p {args.threads} "
-            f"-c {cval:.2f} "
-            f"-s 8 "
-            f"-f 0.05 "
-            f"-j 3 "
-            f"-m 300 "
-            f"-o {os.path.basename(out_gtf)}"
-        )
-        # If user passed --egap_gff, we add -G <annotation> for reference-guided assembly
-        if args.egap_gff:
-            cmd_st += f" -G {os.path.basename(args.egap_gff)}"
-
-        logger.info(f"[PREPROCESSING] => {cmd_st}")
-        run_pipeline_command(cmd_st, args.use_conda, args.use_docker, outdir)
-        if os.path.isfile(out_gtf):
-            tuned_gtfs.append(out_gtf)
-
-    # Also consider user-provided GTF as a candidate
-    if args.a and os.path.isfile(args.a):
-        tuned_gtfs.append(args.a)
-
-    # Step 2: Download and chmod unique_gene_id.py
+    # Fetch helpers
     cmd_wget_uniq = (
         "wget -O unique_gene_id.py "
         "https://raw.githubusercontent.com/cfarkas/amyg/refs/heads/main/third_parties/unique_gene_id.py"
@@ -611,69 +432,27 @@ def run_preprocessing_tuning(args):
     run_pipeline_command(cmd_wget_uniq, args.use_conda, args.use_docker, outdir)
     run_pipeline_command("chmod 755 unique_gene_id.py", args.use_conda, args.use_docker, outdir)
 
-    best_f1 = -1.0
-    best_gtf = None
+    a_basename = os.path.basename(args.a)
+    a_base_noext = os.path.splitext(a_basename)[0]
+    uniq_out = a_base_noext + ".unique_gene_id.gtf"
 
-    # Step 3: For each candidate GTF => run unique_gene_id => run gffcompare => parse F1
-    for cand_gtf in tuned_gtfs:
-        lbl = os.path.basename(cand_gtf).replace(".gtf", "")
-        cand_gtf_base = os.path.splitext(cand_gtf)[0]
-        out_uniq = cand_gtf_base + ".unique_gene_id.gtf"
+    # Convert to GTF if needed, then assign unique gene ids
+    tmp_gtf = a_basename
+    if a_basename.lower().endswith(".gff3") or a_basename.lower().endswith(".gff"):
+        # normalize to GTF for downstream helpers
+        tmp_gtf = a_base_noext + ".as_gtf.gtf"
+        run_pipeline_command(f"gffread -T -o {tmp_gtf} {a_basename}", args.use_conda, args.use_docker, outdir)
 
-        cmd_uniq = f"python unique_gene_id.py {os.path.basename(cand_gtf)}"
-        logger.info(f"[PREPROCESSING] => {cmd_uniq}")
-        run_pipeline_command(cmd_uniq, args.use_conda, args.use_docker, outdir)
+    run_pipeline_command(f"python unique_gene_id.py {tmp_gtf}", args.use_conda, args.use_docker, outdir)
+    if not os.path.isfile(os.path.join(outdir, uniq_out)):
+        # try fallback glob
+        alt = glob.glob(os.path.join(outdir, a_base_noext + ".unique_gene_id.gtf"))
+        if not alt:
+            logger.error("[PREPROCESSING] unique_gene_id failed.")
+            sys.exit(1)
 
-        if not os.path.isfile(out_uniq):
-            alt = glob.glob(cand_gtf_base + ".unique_gene_id.gtf")
-            if alt:
-                out_uniq = alt[0]
-            else:
-                logger.warning(f"[PREPROCESSING] missing {out_uniq} => skip")
-                continue
+    final_pre = os.path.join(outdir, "preprocessed_best.gtf")
 
-        cmp_prefix = f"cmp_{lbl}"
-        cmd_cmp = (
-            f"gffcompare -r {os.path.basename(args.egap_gff)} "
-            f"-o {cmp_prefix}.stats "
-            f"{os.path.basename(out_uniq)}"
-        )
-        logger.info(f"[PREPROCESSING] => {cmd_cmp}")
-        run_pipeline_command(cmd_cmp, args.use_conda, args.use_docker, outdir)
-
-        # Fix: rename the stats file if needed
-        original_stats = os.path.join(
-            outdir, f"{cmp_prefix}.{os.path.basename(out_uniq)}.stats"
-        )
-        renamed_stats = os.path.join(outdir, f"{cmp_prefix}.stats")
-        if os.path.exists(original_stats):
-            os.rename(original_stats, renamed_stats)
-
-        stats_file = renamed_stats
-        f1_score = 0.0
-        if os.path.isfile(stats_file):
-            f1_score = compute_f1_from_stats(stats_file)
-        else:
-            logger.warning(f"compute_f1_from_stats => missing {stats_file}")
-
-        logger.info(f"[PREPROCESSING] => {lbl} => F1={f1_score:.2f}")
-
-        if f1_score > best_f1:
-            best_f1 = f1_score
-            best_gtf = out_uniq
-
-    if not best_gtf:
-        logger.error("[PREPROCESSING] Could not find best GTF => exiting.")
-        sys.exit(1)
-
-    # Step 4: Copy the best GTF to "preprocessed_best.gtf" if different
-    final_tuned = os.path.join(outdir, "preprocessed_best.gtf")
-    if not os.path.exists(final_tuned):
-        shutil.copy(best_gtf, final_tuned)
-    elif not os.path.samefile(best_gtf, final_tuned):
-        shutil.copy(best_gtf, final_tuned)
-
-    # Step 5: Optionally run merge_stringtie_names.py if user passed --egap_gff
     if args.egap_gff:
         logger.info("=== Preprocessing: Downloading merge_stringtie_names.py ===")
         run_pipeline_command(
@@ -683,31 +462,218 @@ def run_preprocessing_tuning(args):
             outdir
         )
         run_pipeline_command("chmod 755 merge_stringtie_names.py", args.use_conda, args.use_docker, outdir)
-        out_gtf = "transcripts_named.gtf"
+        out_named = "transcripts_named.gtf"
         cmd_merge = (
             f"python merge_stringtie_names.py "
-            f"--stringtie_gtf {final_tuned} "
-            f"--egap_gff {args.egap_gff} "
-            f"--output_gtf {out_gtf}"
+            f"--stringtie_gtf {uniq_out} "
+            f"--egap_gff {os.path.basename(args.egap_gff)} "
+            f"--output_gtf {out_named}"
         )
-        logger.info(f"Running: {cmd_merge}")
         run_pipeline_command(cmd_merge, args.use_conda, args.use_docker, outdir)
-        logger.info(f"Transcripts named => {out_gtf}")
-        final_tuned = os.path.join(outdir, out_gtf)
+        shutil.copy(os.path.join(outdir, out_named), final_pre)
+    else:
+        shutil.copy(os.path.join(outdir, uniq_out), final_pre)
 
-    logger.info(f"[PREPROCESSING] best => {best_gtf}, F1={best_f1:.2f}")
-    logger.info(f"[PREPROCESSING] => Overriding -a => {final_tuned}")
-    args.a = final_tuned
-
-    maybe_exit()  # exit or return, depending on --continue
-    # If maybe_exit doesn't exit, we return to main => continue pipeline
-    return
-
+    logger.info(f"[PREPROCESSING] => Overriding -a => {final_pre}")
+    args.a = final_pre
 
 ###############################################################################
-# SINGLE-CELL LOGIC
+# EXON CORRECTION (NEW): Portcullis + (PASA | Mikado)
 ###############################################################################
+def find_portcullis_pass_bed(pc_dir):
+    """Return path to filtered/pass junctions bed from Portcullis."""
+    candidates = [
+        os.path.join(pc_dir, "filtered_junctions.bed"),
+        os.path.join(pc_dir, "pass.junctions.bed"),
+        os.path.join(pc_dir, "junc/filtered_junctions.bed"),
+    ]
+    for p in candidates:
+        if os.path.isfile(p):
+            return p
+    return None
 
+def write_pasa_align_config(outdir, use_docker):
+    """
+    Minimal PASA SQLite config.
+    Creates: pasa.alignAssembly.config in outdir, using local path 'pasa.sqlite'
+    (absolute path inside container is /data/pasa.sqlite).
+    """
+    conf_path = os.path.join(outdir, "pasa.alignAssembly.config")
+    lines = [
+        "# PASA SQLite config (auto-generated by amyg.py)",
+        "DATABASE=pasa.sqlite",
+        "",
+        "# Validation thresholds:",
+        "validate_alignments_in_db.dbi:--MIN_PERCENT_ALIGNED=80",
+        "validate_alignments_in_db.dbi:--MIN_AVG_PER_ID=80",
+    ]
+    with open(conf_path, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    return conf_path
+
+def run_portcullis(args):
+    outdir = args.output
+    g = os.path.basename(args.g)
+    b = os.path.basename(args.bam)
+    pc_dir = os.path.join(outdir, "portcullis_out")
+    os.makedirs(pc_dir, exist_ok=True)
+    cmd = f"portcullis full -o {pc_dir} -t {args.threads} {g} {b}"
+    log_green_info(f"[EXON_CORR] Portcullis: {cmd}")
+    run_pipeline_command(cmd, args.use_conda, args.use_docker, outdir)
+    bed = find_portcullis_pass_bed(pc_dir)
+    if not bed:
+        logger.error("[EXON_CORR] Portcullis pass junctions BED not found.")
+        sys.exit(1)
+    return bed, pc_dir
+
+def run_exon_correction_pasa(args, portcullis_bed):
+    """
+    PASA alignment assembly to refine exon boundaries based on transcript alignments.
+    Input transcripts are generated from current args.a using gffread.
+    """
+    outdir = args.output
+    g = os.path.basename(args.g)
+    a = os.path.basename(args.a)
+
+    # Generate transcripts.fa from current annotation
+    run_pipeline_command(
+        f"gffread -w transcripts_for_pasa.fa -g {g} {a}",
+        args.use_conda, args.use_docker, outdir
+    )
+
+    conf = write_pasa_align_config(outdir, args.use_docker)
+    pasa_log = os.path.join(outdir, "pasa.align.log")
+    # Run PASA (GMAP-based)
+    cmd = (
+        f"Launch_PASA_pipeline.pl "
+        f"-c {os.path.basename(conf)} -C -R "
+        f"-g {g} -t transcripts_for_pasa.fa "
+        f"--ALIGNERS gmap "
+        f"--CPU {args.threads} "
+        f"> {os.path.basename(pasa_log)} 2>&1"
+    )
+    log_green_info("[EXON_CORR] Running PASA alignment assembly...")
+    run_pipeline_command(cmd, args.use_conda, args.use_docker, outdir)
+
+    # Detect PASA GFF3 output
+    candidates = sorted(
+        glob.glob(os.path.join(outdir, "*.pasa_assemblies.gff3"))
+        + glob.glob(os.path.join(outdir, "*.gene_structures_post_PASA_updates*.gff3"))
+    )
+    if not candidates:
+        logger.error("[EXON_CORR] PASA GFF3 not found. Inspect pasa.align.log.")
+        sys.exit(1)
+
+    pasa_gff3 = os.path.basename(candidates[-1])
+    corrected_gtf = "pasa_corrected.gtf"
+    run_pipeline_command(
+        f"gffread -T -o {corrected_gtf} {pasa_gff3}",
+        args.use_conda, args.use_docker, outdir
+    )
+    logger.info(f"[EXON_CORR] PASA produced {pasa_gff3} -> {corrected_gtf}")
+    args.a = os.path.join(outdir, corrected_gtf)
+
+def run_exon_correction_mikado(args, portcullis_bed):
+    """
+    Mikado: configure → prepare → (optional) serialise → pick
+    Uses current args.a (GTF/GFF3) and genome, integrates Portcullis junctions.
+    """
+    outdir = args.output
+    g = os.path.basename(args.g)
+    a = os.path.basename(args.a)
+
+    mk_dir = os.path.join(outdir, "mikado")
+    os.makedirs(mk_dir, exist_ok=True)
+
+    config_yaml = os.path.join("mikado", "mikado_config.yaml")
+    # configure
+    cmd_cfg = (
+        f"mikado configure "
+        f"--gff {a} "
+        f"--reference {g} "
+        f"--junctions {os.path.relpath(portcullis_bed, outdir)} "
+        f"-y -od mikado mikado_config.yaml"
+    )
+    log_green_info("[EXON_CORR] Mikado configure")
+    run_pipeline_command(cmd_cfg, args.use_conda, args.use_docker, outdir)
+
+    # prepare
+    cmd_prep = (
+        f"mikado prepare "
+        f"--json-conf {config_yaml} "
+        f"--reference {g} "
+        f"-od mikado "
+        f"-o mikado_prepared.gtf -of mikado_prepared.fasta "
+        f"{a}"
+    )
+    run_pipeline_command(cmd_prep, args.use_conda, args.use_docker, outdir)
+
+    # optional: ORFs (can improve pick, but not strictly required)
+    if os.path.isfile(os.path.join(outdir, "mikado", "mikado_prepared.fasta")):
+        run_pipeline_command(
+            "TransDecoder.LongOrfs -t mikado/mikado_prepared.fasta",
+            args.use_conda, args.use_docker, outdir
+        )
+        run_pipeline_command(
+            "TransDecoder.Predict -t mikado/mikado_prepared.fasta",
+            args.use_conda, args.use_docker, outdir
+        )
+
+    # serialise (will load junctions from config; ORF/homology if available)
+    cmd_ser = f"mikado serialise --json-conf {config_yaml}"
+    run_pipeline_command(cmd_ser, args.use_conda, args.use_docker, outdir)
+
+    # pick
+    cmd_pick = f"mikado pick --json-conf {config_yaml} -o mikado/mikado.loci.gff3"
+    run_pipeline_command(cmd_pick, args.use_conda, args.use_docker, outdir)
+
+    loci_gff3 = os.path.join(outdir, "mikado", "mikado.loci.gff3")
+    if not os.path.isfile(loci_gff3):
+        logger.error("[EXON_CORR] Mikado did not produce mikado.loci.gff3")
+        sys.exit(1)
+
+    corrected_gtf = os.path.join(outdir, "mikado_corrected.gtf")
+    run_pipeline_command(
+        f"gffread -T -o {os.path.basename(corrected_gtf)} mikado/mikado.loci.gff3",
+        args.use_conda, args.use_docker, outdir
+    )
+    logger.info(f"[EXON_CORR] Mikado produced mikado.loci.gff3 -> {corrected_gtf}")
+    args.a = corrected_gtf
+
+def run_exon_correction(args):
+    """
+    Orchestrate exon-correction if requested.
+    Requires: --bam and -g when --exon_correction != none
+    """
+    if args.exon_correction == "none":
+        logger.info("[EXON_CORR] Skipping exon correction (none).")
+        return
+
+    if not args.bam or not os.path.isfile(args.bam):
+        logger.error("[EXON_CORR] --bam is required for Portcullis.")
+        sys.exit(1)
+    if not args.g or not os.path.isfile(args.g):
+        logger.error("[EXON_CORR] -g genome FASTA is required.")
+        sys.exit(1)
+    if not args.a or not os.path.isfile(args.a):
+        logger.error("[EXON_CORR] -a annotation (GTF/GFF3) is required.")
+        sys.exit(1)
+
+    # Always run Portcullis first
+    junc_bed, pc_dir = run_portcullis(args)
+
+    # Then run the chosen corrector
+    if args.exon_correction == "pasa":
+        run_exon_correction_pasa(args, junc_bed)
+    elif args.exon_correction == "mikado":
+        run_exon_correction_mikado(args, junc_bed)
+    else:
+        logger.error(f"[EXON_CORR] Unknown option: {args.exon_correction}")
+        sys.exit(1)
+
+###############################################################################
+# SINGLE-CELL LOGIC (unchanged)
+###############################################################################
 def run_single_cell_mode(args):
     """
     Single-cell pipeline that:
@@ -719,13 +685,6 @@ def run_single_cell_mode(args):
       6) Update args.a => that novel GTF, args.g => local reference FA, args.output => single-cell folder.
       7) Return so the normal pipeline can continue inline with valid -a, -g, -o.
     """
-
-    import datetime
-    import os
-    import sys
-    import shutil
-    import glob
-
     logger.info("[SINGLE_CELL] Starting single-cell pipeline...")
 
     date_str = datetime.datetime.now().strftime("%Y%m%d")
@@ -894,13 +853,12 @@ def run_single_cell_mode(args):
     logger.info("[SINGLE_CELL] => returning to main => normal pipeline will continue with -a, -g, -o set properly.")
     return
 
-
 ###############################################################################
 # MAIN
 ###############################################################################
 def main():
     parser = argparse.ArgumentParser(
-        description="annotation pipeline with optional single_cell or coverage-based preprocessing."
+        description="annotation pipeline with optional single_cell and exon-correction (Portcullis + PASA/Mikado)."
     )
     parser.add_argument("--install", choices=["conda", "docker"], help="Install environment and exit.")
     parser.add_argument("--use_conda", action="store_true", help="Use conda env.")
@@ -908,12 +866,14 @@ def main():
     parser.add_argument("--threads", type=int, default=10)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--purge_all_envs", action="store_true")
-    parser.add_argument("--dups", action="store_true")
-    parser.add_argument("--chunk_size", type=int, default=20000)
+
+    parser.add_argument("--chunk_size", type=int, default=20000)  # kept for BLAST chunking, not used for dups anymore
     parser.add_argument("-o", "--output", help="Output directory")
-    parser.add_argument("-a", help="GTF from StringTie or param tuning")
+    parser.add_argument("-a", help="Input annotation (GTF/GFF3)")
     parser.add_argument("-g", help="Reference genome (FASTA)")
     parser.add_argument("--egap_gff", help="EGAP GFF for merging or reference checks")
+
+    # single-cell mode (kept)
     parser.add_argument("--single_cell", action="store_true",
                         help="If set => multi-bam single-cell logic => exit after done.")
     parser.add_argument("--input_dir", help="Directory with .bam for single_cell")
@@ -921,13 +881,15 @@ def main():
     parser.add_argument("--ref_fa", help="Reference genome for single_cell final pass")
     parser.add_argument("--overlap_frac", type=float, default=0.05,
                         help="Overlap fraction for single_cell mode.")
-    parser.add_argument("--preprocessing", action="store_true",
-                        help="If set => coverage-based param sets => pick best => override -a.")
-    parser.add_argument("--bam", help="BAM used for coverage detection in preprocessing")
 
-    # NEW FLAG
-    parser.add_argument("--continue", action="store_true",
-                        help="If set, continue the pipeline after preprocessing instead of exiting.")
+    # simple preprocessing (kept; no tuning)
+    parser.add_argument("--preprocessing", action="store_true",
+                        help="Normalize IDs and optionally merge names with --egap_gff (no StringTie tuning).")
+
+    # exon-correction (NEW)
+    parser.add_argument("--exon_correction", choices=["none", "pasa", "mikado"], default="none",
+                        help="Run Portcullis plus PASA or Mikado to refine exon boundaries (requires --bam and -g).")
+    parser.add_argument("--bam", help="RNA-seq BAM for Portcullis (required when --exon_correction != none)")
 
     args = parser.parse_args()
 
@@ -938,20 +900,22 @@ def main():
     elif args.install == "docker":
         install_docker_image()
 
-    # NEW: unify absolute paths and local copies
+    # unify absolute paths and local copies
     check_inputs(args)
 
+    # single-cell branch (produces args.a/args.g and returns)
     if args.single_cell:
         run_single_cell_mode(args)
 
+    # light preprocessing (kept)
     if args.preprocessing:
-        # run_preprocessing_tuning now checks args.continue
-        # If not set, it calls sys.exit(0). If set, it returns normally
-        run_preprocessing_tuning(args)
+        run_preprocessing(args)
 
-    # We only reach here if:
-    #   1) --preprocessing wasn't used, OR
-    #   2) --preprocessing was used with --continue, so we returned
+    # optional exon-correction (Portcullis + PASA/Mikado)
+    if args.exon_correction != "none":
+        run_exon_correction(args)
+
+    # === Normal pipeline continues ===
     log_green_info("Starting normal pipeline script...")
 
     if not args.a or not args.g or not args.output:
@@ -962,8 +926,7 @@ def main():
     use_docker = args.use_docker
     threads = args.threads
     force = args.force
-    dups = args.dups
-    chunk_size = args.chunk_size
+    chunk_size = args.chunk_size  # currently unused downstream; kept for compatibility
     a = args.a
     g = args.g
     output_dir = args.output
@@ -1006,7 +969,7 @@ def main():
         if use_docker:
             gc.write('SWISSPROT_DB="/data/database/swissprot"\n')
         else:
-            gc.write('SWISSPROT_DB="TO_BE_REPLACED"\n')
+            gc.write('SWISSPROT_DB="03_data/swissprot"\n')
         gc.write("#\n")
 
     a_abs = os.path.abspath(a)
@@ -1045,7 +1008,7 @@ def main():
             lines = f.readlines()
         new_lines = []
         for line in lines:
-            if "SWISSPROT_DB" in line and "TO_BE_REPLACED" in line:
+            if "SWISSPROT_DB" in line:
                 new_lines.append('SWISSPROT_DB="03_data/swissprot"\n')
             else:
                 new_lines.append(line)
@@ -1163,68 +1126,7 @@ def main():
     else:
         logger.warning("No final_annotated.gtf => check annotate_gtf.py logs")
 
-    if args.dups:
-        logger.info("::: Step 9B => duplicates => amyg_syntenyblast.py :::")
-        run_pipeline_command(
-            "curl -O https://raw.githubusercontent.com/cfarkas/amyg/refs/heads/main/scripts/amyg_syntenyblast.py",
-            use_conda, use_docker, output_dir
-        )
-        run_pipeline_command("chmod +x amyg_syntenyblast.py", use_conda, use_docker, output_dir)
-        local_output_dir = "."
-        if use_docker:
-            cmd_synteny = (
-                f"PYTHONUNBUFFERED=1 python amyg_syntenyblast.py "
-                f"--fasta {os.path.basename(g_filename)} "
-                f"--output_dir {local_output_dir} "
-                f"--chunk_size {chunk_size} "
-                f"--threads {threads}"
-            )
-        else:
-            cmd_synteny = (
-                f"python amyg_syntenyblast.py "
-                f"--fasta {os.path.basename(g_filename)} "
-                f"--output_dir {local_output_dir} "
-                f"--chunk_size {chunk_size} "
-                f"--threads {threads}"
-            )
-        run_pipeline_command(cmd_synteny, use_conda, use_docker, output_dir)
-        logger.info("::: duplication analysis => done :::")
-
-        logger.info("::: Step 9C => amyg_annotatedups.py for GTF duplication annotation :::")
-        run_pipeline_command(
-            "curl -O https://raw.githubusercontent.com/cfarkas/amyg/refs/heads/main/scripts/amyg_annotatedups.py",
-            use_conda, use_docker, output_dir
-        )
-        run_pipeline_command("chmod +x amyg_annotatedups.py", use_conda, use_docker, output_dir)
-
-        if use_docker:
-            final_annotated_gtf_path = "/data/final_results/final_annotated.gtf"
-            synteny_csv_path = "/data/synteny_blocks.csv"
-            final_annot_dups_path = "/data/final_results/final_annotated_dups.gtf"
-            dup_annot_log = "/data/dup_annot.log"
-        else:
-            final_annotated_gtf_path = os.path.join(output_dir, "final_results", "final_annotated.gtf")
-            synteny_csv_path = os.path.join(".", "synteny_blocks.csv")
-            final_annot_dups_path = os.path.join(output_dir, "final_results", "final_annotated_dups.gtf")
-            dup_annot_log = os.path.join(".", "dup_annot.log")
-
-        annotate_dups_cmd = (
-            f"python amyg_annotatedups.py "
-            f"{final_annotated_gtf_path} "
-            f"{synteny_csv_path} "
-            f"{final_annot_dups_path} "
-            f"{dup_annot_log}"
-        )
-        run_pipeline_command(annotate_dups_cmd, use_conda, use_docker, output_dir)
-        logger.info("::: duplication annotation => done :::")
-
-        synteny_csv_on_host = os.path.join(output_dir, "synteny_blocks.csv")
-        if os.path.isfile(synteny_csv_on_host):
-            shutil.move(synteny_csv_on_host, os.path.join(output_dir, "final_results"))
-        pdfs = glob.glob(os.path.join(output_dir, "*.pdf"))
-        for pdf_file in pdfs:
-            shutil.move(pdf_file, os.path.join(output_dir, "final_results"))
-
+    # wrap up directory layout
     contents = os.listdir(output_dir)
     exclude = {
         "final_results",
@@ -1232,7 +1134,12 @@ def main():
         "database",
         "gawn_config.sh",
         "transcripts.fa",
-        "gawn"
+        "gawn",
+        "mikado",
+        "portcullis_out",
+        "pasa.alignAssembly.config",
+        "pasa.sqlite",
+        "pasa.align.log",
     }
     leftover = [c for c in contents if c not in exclude]
     if leftover:
