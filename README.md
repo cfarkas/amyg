@@ -77,7 +77,7 @@ amyg --purge_all_envs
 
 ---
 
-## Run
+## Minimal Run
 Currently there are two ways to run the pipeline:
 
 ### 1) Docker Mode
