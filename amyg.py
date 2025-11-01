@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# amyg.py — exon-correction edition
+# amyg.py
 # - Keeps preprocessing (-a GTF) and --egap_gff merge/naming path.
 # - Adds Portcullis + (PASA | Mikado) exon-correction options.
 # - Keeps single-cell mode.
@@ -867,7 +867,6 @@ def main():
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--purge_all_envs", action="store_true")
 
-    parser.add_argument("--chunk_size", type=int, default=20000)  # kept for BLAST chunking, not used for dups anymore
     parser.add_argument("-o", "--output", help="Output directory")
     parser.add_argument("-a", help="Input annotation (GTF/GFF3)")
     parser.add_argument("-g", help="Reference genome (FASTA)")
@@ -926,7 +925,6 @@ def main():
     use_docker = args.use_docker
     threads = args.threads
     force = args.force
-    chunk_size = args.chunk_size  # currently unused downstream; kept for compatibility
     a = args.a
     g = args.g
     output_dir = args.output
