@@ -134,10 +134,6 @@ amyg \
    - Downloads `annotate_gtf.py` and merges final hits into `final_annotated.gtf`.
    - Outputs organized to `final_results/`, with any remaining TransDecoder files moved to `transdecoder_results/`.
 
-6. **Usage with Optional `--dups`**
---dups enables chunk-based synteny BLAST via ```amyg_syntenyblast.py``` to identify potential duplicated regions.
---chunk_size controls the size of each FASTA split for BLAST runs when --dups is used.
-
 **Organizes** final results in `final_results/` subfolder and leftover TransDecoder outputs in `transdecoder_results/`.
 
 ---
@@ -168,52 +164,6 @@ amyg --preprocessing \
   --egap_gff /path/to/genomic.gff
 ```
 ```transcripts_named.gtf``` will be produced, that can be input for amyg pipeline.
-
----
----
-## Applying amyg to single-cell data
-In addition to annotate de novo sequenced genomes, amyg is able to recognize and annotate novel genes from single-cell data. The input files for running amyg in single-cell mode are cell-type-specific bams (output from SComatic ```SplitBamCellTypes.py```), with which amyg will automatically reconstruct the GTF files (using stringtie). Then, it runs the main pipeline (download SwissProt, create gawn_config.sh, run GAWN, run TransDecoder, and annotate GTF). Consider that to run amyg in this mode, cell annotation must already have been performed.
-
-To run amyg with single-cell mode, it is necessary to add the flag ```--single_cell``` and the reference fasta and gtf file (```--ref_fa``` and ```--ref_gtf```, respectively).
-
-### 1) Docker Mode
-```
-mkdir test_docker_scMode
-amyg \
-  --input_dir /path/to/SplitBamCellTypes.bam \
-  -g /path/to/my_genome.fasta \
-  --single_cell \
-  --ref_fa /path/to/my_genome.fasta \
-  --ref_gtf /path/to/my_genome.gtf \
-  -o ./test_docker_scMode\
-  --threads 25 \
-  --use_docker \
-  --force
-```
-### 2) Conda Mode
-```
-mkdir test_conda_scMode
-amyg \
-  --input_dir /path/to/SplitBamCellTypes.bam \
-  -g /path/to/my_genome.fasta \
-  --single_cell \
-  --ref_fa /path/to/my_genome.fasta \
-  --ref_gtf /path/to/my_genome.gtf \
-  -o ./test_conda_scMode \
-  --threads 25 \
-  --use_conda \
-  --force 
-```
-
-Similar to the option without single-cell mode, the main results of the pipeline will be in the ```final_results/``` subfolder. The output files are:
-- final_annotated-gtf
-- longest_orfs.cds
-- longest_orfs.gff3
-- longest_orfs.pep
-- transcriptome_annotation_table.tsv
-- transcriptome.hits
-- transcriptome.swissprot
-- transcripts.fa
 
 ---
 ## Applying amyg to single-cell data
