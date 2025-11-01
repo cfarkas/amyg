@@ -168,6 +168,7 @@ amyg --preprocessing \
   --egap_gff /path/to/genomic.gff
 ```
 ```transcripts_named.gtf``` will be produced, that can be input for amyg pipeline.
+
 ---
 ---
 ## Applying amyg to single-cell data
